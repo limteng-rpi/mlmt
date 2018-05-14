@@ -444,14 +444,25 @@ class LstmCrf(nn.Module):
         self.idx_label = {idx: label for label, idx in label_vocab.items()}
         self.use_char_embedding = use_char_embedding
 
+        self.word_embedding = word_embedding
+        self.char_embedding = char_embedding
+        self.feat_dim = word_embedding.output_size
+        if use_char_embedding:
+            self.feat_dim += char_embedding.output_size
+
         self.lstm = lstm
         self.input_layer = input_layer
         self.univ_layer = univ_layer
         self.spec_layer = spec_layer
-        # Dropout layers
+        self.crf = crf
+        self.char_highway = char_highway
         self.lstm_dropout = nn.Dropout(p=lstm_dropout_prob)
         self.embedding_dropout = nn.Dropout(p=embedding_dropout_prob)
         self.linear_dropout = nn.Dropout(p=linear_dropout_prob)
+        self.label_size = len(label_vocab)
+        if spec_layer:
+            self.spec_gate = Linear(spec_layer.in_features,
+                                    spec_layer.out_features)
 
     def cuda(self, device=None):
         for module in self.children():
@@ -463,3 +474,71 @@ class LstmCrf(nn.Module):
             module.cpu()
         return self
 
+    def forward_model(self, inputs, lens, chars=None, char_lens=None):
+        """From the input to the linear layer, not including the CRF layer.
+        
+        :param inputs: Input tensor of size batch_size * max_seq_len (word indexes).
+        :param lens: Sequence length tensor of size batch_size (sequence lengths).
+        :param chars: Input character tensor of size batch_size * max_seq_len * max_word_len (character indexes).
+        :param char_lens: Word length tensor of size (batch_size * max_seq_len) * max_word_len.
+        :return: Linear layer output tensor of size batch_size * max_seq_len * label_num.  
+        """
+        batch_size, seq_len = inputs.size()
+
+        # Word embedding
+        inputs_embed = self.word_embedding.forward(inputs)
+        # Character embedding
+        if self.use_char_embedding:
+            chars_embed = self.char_embedding.forward(chars, char_lens)
+            if self.char_highway:
+                chars_embed = self.char_highway.forward(chars_embed)
+            chars_embed = chars_embed.view(batch_size, seq_len, -1)
+            inputs_embed = torch.cat([inputs_embed, chars_embed], dim=2)
+        inputs_embed = self.embedding_dropout.forward(inputs_embed)
+
+        # LSTM layer
+        inputs_packed = R.pack_padded_sequence(inputs_embed,
+                                               lens.data.tolist(),
+                                               batch_first=True)
+        lstm_out, _ = self.lstm.forward(inputs_packed)
+        lstm_out, _ = R.pad_packed_sequence(lstm_out, batch_first=True)
+        lstm_out = lstm_out.contiguous().view(-1, self.lstm.output_size)
+        lstm_out = self.lstm_dropout.forward(lstm_out)
+
+        # Linear layer
+        univ_feats = self.univ_layer.forward(lstm_out)
+        if self.spec_layer:
+            spec_feats = self.spec_layer.forward(lstm_out)
+            gate = F.sigmoid(self.spec_gate.forward(lstm_out))
+            outputs = gate * spec_feats + (1 - gate) * univ_feats
+        else:
+            outputs = univ_feats
+        outputs = outputs.view(batch_size, seq_len, self.label_size)
+
+        return outputs
+
+    def predict(self, inputs, labels, lens, chars=None, char_lens=None):
+        """From the input to the CRF output (prediction mode).
+        
+        :param inputs: Input tensor of size batch_size * max_seq_len (word indexes).
+        :param labels: Gold labels.
+        :param lens: Sequence length tensor of size batch_size (sequence lengths).
+        :param chars: Input character tensor of size batch_size * max_seq_len * max_word_len (character indexes).
+        :param char_lens: Word length tensor of size (batch_size * max_seq_len) * max_word_len.
+        :return: Prediction and loss.
+        """
+        self.eval()
+        loglik, logits = self.loglik(inputs, labels, lens, chars, char_lens)
+        loss = -loglik.mean()
+        scores, preds = self.crf.viterbi_decode(logits, lens)
+        self.train()
+        return preds, loss
+
+    def loglik(self, inputs, labels, lens, chars=None, char_lens=None):
+        logits = self.forward_model(inputs, lens, chars, char_lens)
+        logits = self.crf.pad_logits(logits, lens)
+        norm_score = self.crf.calc_norm_score(logits, lens)
+        gold_score = self.crf.calc_gold_score(logits, labels, lens)
+        loglik = gold_score - norm_score
+
+        return loglik, logits
