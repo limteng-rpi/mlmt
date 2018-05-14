@@ -414,3 +414,52 @@ class CRF(nn.Module):
         scores = scores.squeeze(-1)
 
         return scores, paths
+
+
+class LstmCrf(nn.Module):
+    def __init__(self,
+                 token_vocab,
+                 label_vocab,
+                 char_vocab,
+
+                 word_embedding,
+                 char_embedding,
+                 crf,
+                 lstm,
+                 input_layer=None,
+                 univ_layer=None,
+                 spec_layer=None,
+
+                 embedding_dropout_prob=0,
+                 lstm_dropout_prob=0,
+                 linear_dropout_prob=0,
+                 use_char_embedding=True,
+                 char_highway=None,
+                 ):
+        super(LstmCrf, self).__init__()
+
+        self.token_vocab = token_vocab
+        self.label_vocab = label_vocab
+        self.char_vocab = char_vocab
+        self.idx_label = {idx: label for label, idx in label_vocab.items()}
+        self.use_char_embedding = use_char_embedding
+
+        self.lstm = lstm
+        self.input_layer = input_layer
+        self.univ_layer = univ_layer
+        self.spec_layer = spec_layer
+        # Dropout layers
+        self.lstm_dropout = nn.Dropout(p=lstm_dropout_prob)
+        self.embedding_dropout = nn.Dropout(p=embedding_dropout_prob)
+        self.linear_dropout = nn.Dropout(p=linear_dropout_prob)
+
+    def cuda(self, device=None):
+        for module in self.children():
+            module.cuda(device)
+        return self
+
+    def cpu(self):
+        for module in self.children():
+            module.cpu()
+        return self
+
