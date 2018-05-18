@@ -1,28 +1,127 @@
 import torch
-from torch.autograd import Variable
-from collections import Counter
-from random import shuffle, uniform, sample
 import constant as C
 
+from util import get_logger
+from collections import Counter, defaultdict
+from torch.autograd import Variable
+from random import shuffle, uniform, sample
 
+logger = get_logger(__name__)
+
+
+PARSERS = {}
+DATASETS = {}
+
+
+def register_parser(name):
+    def register(cls):
+        if name not in PARSERS:
+            PARSERS[name] = cls
+        return cls
+    return register
+
+
+def register_dataset(name):
+    def register(cls):
+        if name not in DATASETS:
+            DATASETS[name] = cls
+        return cls
+    return register
+
+
+def create_parser(name, conf):
+    if name in PARSERS:
+        return PARSERS[name](conf)
+    else:
+        raise ValueError('Parser {} is not registered'.format(name))
+
+
+def create_dataset(name, conf):
+    if name in DATASETS:
+        return DATASETS[name](conf)
+    else:
+        raise ValueError('Dataset {} is not registered'.format(name))
+
+
+def count2vocab(counts,
+                start_idx=0,
+                ignore_case=False,
+                min_count=0,
+                sort=False,
+                sort_func=lambda x: (len(x[0]), x[0])):
+    """
+
+    :param counts: 
+    :param start_idx: 
+    :param ignore_case: 
+    :param min_count: 
+    :param sort: Sort the keys. 
+    :param sort_func: Key sorting lambda function.
+    :return: 
+    """
+
+    current_idx = start_idx
+    merge_count = defaultdict(int)
+    for count in counts:
+        for k, v in count.items():
+            if ignore_case:
+                k = k.lower()
+            merge_count[k] += v
+
+    vocab = {}
+    if sort:
+        merge_count_list = [(k, v) for k, v in merge_count.items()]
+        merge_count_list.sort(key=sort_func)
+        for k, v in merge_count_list:
+            if v >= min_count:
+                vocab[k] = current_idx
+                current_idx += 1
+    else:
+        for k, v in merge_count.items():
+            if v >= min_count:
+                vocab[k] = current_idx
+                current_idx += 1
+    return vocab
+
+
+def numberize_datasets(confs,
+                       token_ignore_case=True,
+                       label_ignore_case=False,
+                       char_ignore_case=False):
+    for dataset, token_vocab, label_vocab, char_vocab in confs:
+        dataset.numberize(token_vocab,
+                          label_vocab,
+                          char_vocab,
+                          token_ignore_case=token_ignore_case,
+                          label_ignore_case=label_ignore_case,
+                          char_ignore_case=char_ignore_case)
+
+
+@register_parser('conll')
 class ConllParser(object):
     """Parse CoNLL format file."""
 
-    def __init__(self,
-                 separator='\t',
-                 token_col=0,
-                 label_col=1,
-                 skip_comment=True):
+    # def __init__(self,
+    #              separator='\t',
+    #              token_col=0,
+    #              label_col=1,
+    #              skip_comment=True):
+    def __init__(self, conf):
         """
-        :param separator: Column separator (default='\t').
-        :param token_col: Index of the token column.
-        :param label_col: Index of the label column.
-        :param skip_comment: Skip lines starting with '#'.
+        :param conf: Config object with the following fields:
+            - separator: Column separator (default='\t').
+            - token_col: Index of the token column.
+            - label_col: Index of the label column.
+            - skip_comment: Skip lines starting with '#'.
         """
-        self.separator = separator
-        self.token_col = token_col
-        self.label_col = label_col
-        self.skip_comment = skip_comment
+        # self.separator = separator
+        # self.token_col = token_col
+        # self.label_col = label_col
+        # self.skip_comment = skip_comment
+        self.separator = getattr(conf, 'separator', '\t')
+        self.token_col = getattr(conf, 'token_col', 0)
+        self.label_col = getattr(conf, 'label_col', 1)
+        self.comment = getattr(conf, 'comment', True)
 
     def parse(self, path):
         """
@@ -56,30 +155,42 @@ class ConllParser(object):
                 yield tokens, labels
 
 
+@register_dataset('sequence')
 class SequenceDataset(object):
 
-    def __init__(self,
-                 path,
-                 parser,
-                 batch_size=1,
-                 sample=None,
-                 max_len=10000):
+    # def __init__(self,
+    #              path,
+    #              parser,
+    #              batch_size=1,
+    #              sample=None,
+    #              max_len=10000):
+    def __init__(self, conf):
         """
-        :param path: Path to the data set. 
-        :param parser: File parser.
-        :param batch_size: Batch size (default=1).
-        :param sample: Sample rate (default=None). It can be set to:
-               - None or 'all': the data set won't be sampled.
-               - An int number: sample <sample> examples from the data set.
-               - A float number in (0, 1]: the data set will be sampled at the given rate.
-        :param max_len: Max example token number.
+        :param conf: Config object with the following fields:
+            - path: Path to the data set. 
+            - parser: File parser.
+            - batch_size: Batch size (default=1).
+            - sample: Sample rate (default=None). It can be set to:
+               * None or 'all': the data set won't be sampled.
+               * An int number: sample <sample> examples from the data set.
+               * A float number in (0, 1]: the data set will be sampled at the given rate.
+            - max_len: Max example token number.
         """
 
-        self.path = path
-        self.parser = parser
-        self.batch_size = batch_size
-        self.sample = sample
-        self.max_len = max_len
+        # self.path = path
+        # self.parser = parser
+        # self.batch_size = batch_size
+        # self.sample = sample
+        # self.max_len = max_len
+
+        assert hasattr(conf, 'path'), 'dataset path is required'
+        assert hasattr(conf, 'parser'), 'dataset parser is required'
+
+        self.path = getattr(conf, 'path')
+        self.parser = getattr(conf, 'parser')
+        self.batch_size = getattr(conf, 'batch_size', 1)
+        self.sample = getattr(conf, 'sample', None)
+        self.max_len = getattr(conf, 'max_len', 10000)
 
         self.dataset = []
         self.batches = []
