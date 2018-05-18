@@ -218,7 +218,7 @@ class PosTagging(SequenceTask):
 
 class MultiTask(object):
 
-    def __int__(self, tasks, eval_freq=1000):
+    def __init__(self, tasks, eval_freq=1000):
         self.tasks = tasks
         self.task_probs = []
         self.update_probs()
@@ -267,6 +267,11 @@ class MultiTask(object):
 
 
 def compute_metadata(datasets):
+    """Compute tokens, labels, and characters in the given data sets.
+    
+    :param datasets: A list of data sets.
+    :return: dicts of token, label, and character counts.
+    """
     token_count = defaultdict(int)
     label_count = defaultdict(int)
     char_count = defaultdict(int)
