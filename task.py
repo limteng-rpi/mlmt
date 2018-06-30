@@ -503,11 +503,11 @@ def build_tasks_from_file(conf_path, options=None):
             raise ValueError('Unknown task {}'.format(task))
         tasks.append(task_obj)
 
-        return tasks, {
-            'lang_token_vocabs': lang_token_vocabs,
-            'task_token_vocabs': task_label_vocabs,
-            'components': components
-        }
+    return tasks, {
+        'lang_token_vocabs': lang_token_vocabs,
+        'task_token_vocabs': task_label_vocabs,
+        'components': components
+    }
 
 
 
