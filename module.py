@@ -311,7 +311,7 @@ class CharCNN(nn.Module):
         # input channel
         inputs_embed = inputs_embed.unsqueeze(1)
         # sequeeze output channel
-        conv_outputs = [conv.forward(inputs_embed).squeeze(3)
+        conv_outputs = [F.relu(conv.forward(inputs_embed)).squeeze(3)
                         for conv in self.convs]
         max_pool_outputs = [F.max_pool1d(i, i.size(2)).squeeze(2)
                             for i in conv_outputs]
@@ -546,11 +546,11 @@ class LstmCrf(Model):
         """
         From input to linear layer.
 
-        :param inputs: 
-        :param lens: 
-        :param chars: 
-        :param char_lens: 
-        :return: 
+        :param inputs:
+        :param lens:
+        :param chars:
+        :param char_lens:
+        :return:
         """
         batch_size, seq_len = inputs.size()
 
