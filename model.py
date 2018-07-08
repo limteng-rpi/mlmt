@@ -1,14 +1,11 @@
 import logging
 import torch
-import numpy as np
 import torch.nn as nn
 import torch.nn.init as I
 import torch.nn.utils.rnn as R
 import torch.nn.functional as F
-import torch.optim as O
 
 from torch.autograd import Variable
-from random import shuffle
 
 
 logger = logging.getLogger(__name__)
@@ -17,10 +14,10 @@ MODULES = {}
 
 def log_sum_exp(vec, dim=0):
     """Calculate LogSumExp (used in the CRF layer).
-    
+
     :param vec: Input vector.
-    :param dim: 
-    :return: 
+    :param dim:
+    :return:
     """
     m, _ = torch.max(vec, dim)
     m_exp = m.unsqueeze(-1).expand_as(vec)
@@ -476,12 +473,12 @@ class LstmCrf(nn.Module):
 
     def forward_model(self, inputs, lens, chars=None, char_lens=None):
         """From the input to the linear layer, not including the CRF layer.
-        
+
         :param inputs: Input tensor of size batch_size * max_seq_len (word indexes).
         :param lens: Sequence length tensor of size batch_size (sequence lengths).
         :param chars: Input character tensor of size batch_size * max_seq_len * max_word_len (character indexes).
         :param char_lens: Word length tensor of size (batch_size * max_seq_len) * max_word_len.
-        :return: Linear layer output tensor of size batch_size * max_seq_len * label_num.  
+        :return: Linear layer output tensor of size batch_size * max_seq_len * label_num.
         """
         batch_size, seq_len = inputs.size()
 
@@ -519,7 +516,7 @@ class LstmCrf(nn.Module):
 
     def predict(self, inputs, labels, lens, chars=None, char_lens=None):
         """From the input to the CRF output (prediction mode).
-        
+
         :param inputs: Input tensor of size batch_size * max_seq_len (word indexes).
         :param labels: Gold labels.
         :param lens: Sequence length tensor of size batch_size (sequence lengths).
