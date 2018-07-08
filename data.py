@@ -51,13 +51,13 @@ def count2vocab(counts,
                 sort_func=lambda x: (len(x[0]), x[0])):
     """
 
-    :param counts: 
-    :param start_idx: 
-    :param ignore_case: 
-    :param min_count: 
-    :param sort: Sort the keys. 
+    :param counts:
+    :param start_idx:
+    :param ignore_case:
+    :param min_count:
+    :param sort: Sort the keys.
     :param sort_func: Key sorting lambda function.
-    :return: 
+    :return:
     """
 
     current_idx = start_idx
@@ -125,7 +125,7 @@ class ConllParser(object):
 
     def parse(self, path):
         """
-        :param path: Path to the file to be parsed. 
+        :param path: Path to the file to be parsed.
         :return: Lists of tokens and labels.
         """
         with open(path, 'r', encoding='utf-8') as r:
@@ -167,7 +167,7 @@ class SequenceDataset(object):
     def __init__(self, conf):
         """
         :param conf: Config object with the following fields:
-            - path: Path to the data set. 
+            - path: Path to the data set.
             - parser: File parser.
             - batch_size: Batch size (default=1).
             - sample: Sample rate (default=None). It can be set to:
@@ -248,10 +248,11 @@ class SequenceDataset(object):
             label_idxs = [label_vocab[l] for l in labels]
             self.dataset_numberized.append((token_idxs, label_idxs, char_idxs))
 
-    def sample_batches(self):
+    def sample_batches(self, shuffle=True):
         self.batches = []
         inst_idxs = [i for i in range(len(self.dataset_numberized))]
-        shuffle(inst_idxs)
+        if shuffle:
+            shuffle(inst_idxs)
         self.batches = [inst_idxs[i:i + self.batch_size] for i in
                         range(0, len(self.dataset_numberized), self.batch_size)]
 
@@ -303,7 +304,7 @@ class SequenceDataset(object):
 
         self.batches = []
         self.batch_size = batch_size
-        self.sample_batches()
+        self.sample_batches(shuffle=False)
 
         while self.batches:
             yield self.get_batch(volatile, gpu)

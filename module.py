@@ -328,7 +328,6 @@ class CRF(nn.Module):
 
         self.label_vocab = label_vocab = getattr(conf, 'label_vocab')
         self.label_size = len(label_vocab) + 2
-        # TODO: change var names
         self.start = self.label_size - 2
         self.end = self.label_size - 1
         transition = torch.randn(self.label_size, self.label_size)
