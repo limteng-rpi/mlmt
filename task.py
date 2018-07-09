@@ -7,8 +7,7 @@ from conlleval import evaluate, report, metrics
 from collections import defaultdict, namedtuple
 from data import (count2vocab, create_parser, create_dataset,
                   numberize_datasets)
-from model import LstmCrf
-from module import create_module
+from model import LstmCrf, create_module
 from util import Config, get_logger
 
 logger = get_logger(__name__)
@@ -268,7 +267,7 @@ class MultiTask(object):
 
 def compute_metadata(datasets):
     """Compute tokens, labels, and characters in the given data sets.
-    
+
     :param datasets: A list of data sets.
     :return: dicts of token, label, and character counts.
     """

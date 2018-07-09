@@ -1,27 +1,37 @@
-import logging
 import torch
 import torch.nn as nn
 import torch.nn.init as I
 import torch.nn.utils.rnn as R
 import torch.nn.functional as F
 
+from util import get_logger, Config
 from torch.autograd import Variable
 
+logger = get_logger(__name__)
 
-logger = logging.getLogger(__name__)
 MODULES = {}
 
 
-def log_sum_exp(vec, dim=0):
-    """Calculate LogSumExp (used in the CRF layer).
+def register_module(name):
+    def register(cls):
+        if name not in MODULES:
+            MODULES[name] = cls
+        return cls
+    return register
 
-    :param vec: Input vector.
-    :param dim:
-    :return:
-    """
-    m, _ = torch.max(vec, dim)
-    m_exp = m.unsqueeze(-1).expand_as(vec)
-    return m + torch.log(torch.sum(torch.exp(vec - m_exp), dim))
+
+def create_module(name, conf):
+    if name in MODULES:
+        return MODULES[name](conf)
+    else:
+        raise ValueError('Module {} is not registered'.format(name))
+
+
+def log_sum_exp(tensor, dim=0):
+    """LogSumExp operation."""
+    m, _ = torch.max(tensor, dim)
+    m_exp = m.unsqueeze(-1).expand_as(tensor)
+    return m + torch.log(torch.sum(torch.exp(tensor - m_exp), dim))
 
 
 def sequence_mask(lens, max_len=None):
@@ -43,29 +53,20 @@ def sequence_mask(lens, max_len=None):
     return mask
 
 
-def sequence_masks(lens):
-    batch_size = lens.size(0)
-
-    max_len = lens.max().data[0]
-
-    ranges = torch.arange(0, max_len).long()
-    ranges = ranges.unsqueeze(0).expand(batch_size, max_len)
-    ranges = Variable(ranges)
-
-    if lens.data.is_cuda:
-        ranges = ranges.cuda()
-
-    lens_exp = lens.unsqueeze(1).expand_as(ranges)
-
-    return (ranges < lens_exp).float(), (ranges >= lens_exp).float()
-
-
+@register_module('linear')
 class Linear(nn.Linear):
-    def __init__(self, in_features, out_features, bias=True):
 
-        super(Linear, self).__init__(in_features, out_features, bias=bias)
-        self.in_features = in_features
-        self.out_features = out_features
+    def __init__(self, conf):
+        assert hasattr(conf, 'in_features')
+        assert hasattr(conf, 'out_features')
+
+        super(Linear, self).__init__(
+            conf.in_features,
+            conf.out_features,
+            bias=getattr(conf, 'bias', True)
+        )
+        self.in_features = conf.in_features
+        self.out_features = conf.out_features
         self.initialize()
 
     def initialize(self):
@@ -76,29 +77,35 @@ class Linear(nn.Linear):
         self.bias.data.fill_(0.0)
 
 
+@register_module('highway')
 class Highway(nn.Module):
+    def __init__(self, conf):
+        assert hasattr(conf, 'num_layers')
+        assert hasattr(conf, 'size')
 
-    def __init__(self, size, num_layers, activation='relu'):
         super(Highway, self).__init__()
-
-        self.size = size
-        self.num_layers = num_layers
-        self.f = getattr(F, activation)
-        self.nonlinear = nn.ModuleList(
-            [Linear(size, size) for _ in range(num_layers)])
-        self.linear = nn.ModuleList(
-            [Linear(size, size) for _ in range(num_layers)])
-        self.gate = nn.ModuleList(
-            [Linear(size, size) for _ in range(num_layers)])
+        self.size = size = conf.size
+        self.num_layers = num_layers = conf.num_layers
+        self.f = getattr(F, getattr(conf, 'activation', 'relu'))
+        self.nonlinear = nn.ModuleList([
+            Linear(Config({'in_features': size, 'out_features': size}))
+            for _ in range(num_layers)])
+        self.linear = nn.ModuleList([
+            Linear(Config({'in_features': size, 'out_features': size}))
+            for _ in range(num_layers)])
+        self.gate = nn.ModuleList([
+            Linear(Config({'in_features': size, 'out_features': size}))
+            for _ in range(num_layers)])
 
     def forward(self, x):
         """
-            :param x: tensor with shape of [batch_size, size]
-            :return: tensor with shape of [batch_size, size]
-            applies σ(x) ⨀ (f(G(x))) + (1 - σ(x)) ⨀ (Q(x)) transformation | G and Q is affine transformation,
-            f is non-linear transformation, σ(x) is affine transformation with sigmoid non-linearition
-            and ⨀ is element-wise multiplication
-            """
+        :param x: tensor with shape of [batch_size, size]
+        :return: tensor with shape of [batch_size, size]
+        applies σ(x) ⨀ (f(G(x))) + (1 - σ(x)) ⨀ (Q(x)) transformation | G and
+         Q is affine transformation, f is non-linear transformation, σ(x) is
+         affine transformation with sigmoid non-linearition and ⨀ is element-
+         wise multiplication
+        """
 
         for layer in range(self.num_layers):
             gate = F.sigmoid(self.gate[layer](x))
@@ -111,33 +118,26 @@ class Highway(nn.Module):
         return x
 
 
+@register_module('embedding')
 class Embedding(nn.Embedding):
-    def __init__(self,
-                 num_embeddings,
-                 embedding_dim,
-                 padding_idx=None,
-                 max_norm=None,
-                 norm_type=2,
-                 scale_grad_by_freq=False,
-                 sparse=False,
-                 trainable=False,
-                 padding=0,
-                 file=None,
-                 stats=False,
-                 vocab=None):
+    def __init__(self, conf):
+        assert hasattr(conf, 'num_embeddings'), 'num_embedding is required'
+        assert hasattr(conf, 'embedding_dim'), 'embedding_dim is required'
 
-        self.num_embeddings = num_embeddings
-        self.embedding_dim = embedding_dim
-        self.padding_idx = padding_idx
-        self.max_norm = max_norm
-        self.norm_type = norm_type
-        self.scale_grad_by_freq = scale_grad_by_freq
-        self.sparse = sparse
-        self.trainable = trainable
-        self.padding = padding
-        self.file = file
-        self.stats = stats
-        self.vocab = vocab
+        self.num_embeddings = num_embeddings = getattr(conf, 'num_embeddings')
+        self.embedding_dim = embedding_dim = getattr(conf, 'embedding_dim')
+        self.padding_idx = padding_idx = getattr(conf, 'padding_idx', None)
+        self.max_norm = max_norm = getattr(conf, 'max_norm', None)
+        self.norm_type = norm_type = getattr(conf, 'norm_type', 2)
+        self.scale_grad_by_freq = scale_grad_by_freq = getattr(
+            conf, 'scale_grad_by_freq', False)
+        self.sparse = sparse = getattr(conf, 'sparse', False)
+        self.allow_gpu = allow_gpu = getattr(conf, 'allow_gpu', False)
+        self.trainable = trainable = getattr(conf, 'trainable', False)
+        self.padding = padding = getattr(conf, 'padding', 0)
+        self.file = file = getattr(conf, 'file', None)
+        self.stats = stats = getattr(conf, 'stats', False)
+        self.vocab = vocab = getattr(conf, 'vocab', None)
 
         super(Embedding, self).__init__(num_embeddings + padding,
                                         embedding_dim,
@@ -146,7 +146,7 @@ class Embedding(nn.Embedding):
                                         norm_type,
                                         scale_grad_by_freq,
                                         sparse)
-        # self.gpu = False
+        self.gpu = False
         self.output_size = embedding_dim
         if not trainable:
             self.weight.requires_grad = False
@@ -158,14 +158,14 @@ class Embedding(nn.Embedding):
     def initialize(self):
         I.xavier_normal(self.weight.data)
 
-    # def cuda(self, device=None):
-    #     self.gpu = True
-    #     if self.allow_gpu:
-    #         return super(Embedding, self).cuda(device=None)
-    #
-    # def cpu(self):
-    #     self.gpu = False
-    #     return super(Embedding, self).cpu()
+    def cuda(self, device=None):
+        self.gpu = True
+        if self.allow_gpu:
+            return super(Embedding, self).cuda(device=None)
+
+    def cpu(self):
+        self.gpu = False
+        return super(Embedding, self).cpu()
 
     def save(self, path, vocab, stats=False):
         """Save embedding to file.
@@ -200,19 +200,21 @@ class Embedding(nn.Embedding):
                 print(e)
 
 
+@register_module('lstm')
 class LSTM(nn.LSTM):
+    def __init__(self, conf):
+        assert hasattr(conf, 'input_size'), 'input_size is required'
+        assert hasattr(conf, 'hidden_size'), 'hidden_size is required'
 
-    def __init__(self, input_size, hidden_size, num_layers=1, bias=True,
-                 batch_first=False, dropout=0, bidirectional=False,
-                 forget_bias=0):
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.bias = bias
-        self.batch_first = batch_first
-        self.dropout = dropout
-        self.bidirectional = bidirectional
-        self.forget_bias = forget_bias
+        self.input_size = input_size = getattr(conf, 'input_size')
+        self.hidden_size = hidden_size = getattr(conf, 'hidden_size')
+        self.num_layers = num_layers = getattr(conf, 'num_layers', 1)
+        self.bias = bias = getattr(conf, 'bias', True)
+        self.batch_first = batch_first = getattr(conf, 'batch_first', False)
+        self.dropout = dropout = getattr(conf, 'dropout', 0)
+        self.bidirectional = bidirectional = getattr(conf, 'bidirectional',
+                                                     False)
+        self.forget_bias = forget_bias = getattr(conf, 'forget_bias', 0)
         self.output_size = hidden_size * (2 if bidirectional else 1)
 
         super(LSTM, self).__init__(input_size=input_size,
@@ -222,6 +224,7 @@ class LSTM(nn.LSTM):
                                    batch_first=batch_first,
                                    dropout=dropout,
                                    bidirectional=bidirectional)
+
         self.initialize()
 
     def initialize(self):
@@ -232,30 +235,46 @@ class LSTM(nn.LSTM):
                 bias_size = p.size(0)
                 p.data[bias_size // 4:bias_size // 2].fill_(self.forget_bias)
 
+    def repack_init_state(self):
+        self.init_hidden = (
+            Variable(self.init_hidden[0].data, requires_grad=True),
+            Variable(self.init_hidden[1].data, requires_grad=True)
+        )
 
+
+@register_module('char_cnn')
 class CharCNN(nn.Module):
-    def __init__(self,
-                 vocab_size,
-                 dimension,
-                 filters
-                 ):
+
+    def __init__(self, conf):
+        assert hasattr(conf, 'vocab_size')
+        assert hasattr(conf, 'dimension')
+        assert hasattr(conf, 'filters')
+
         super(CharCNN, self).__init__()
 
+        vocab_size = getattr(conf, 'vocab_size')
+        dimension = getattr(conf, 'dimension')
+        filters = getattr(conf, 'filters')
+
         self.output_size = sum([x[1] for x in filters])
-        self.embedding = Embedding(vocab_size,
-                                   dimension,
-                                   padding_idx=0,
-                                   sparse=True,
-                                   padding=2)
+        self.embedding = Embedding(Config({
+            'num_embeddings': vocab_size,
+            'embedding_dim': dimension,
+            'padding_idx': 0,
+            'sparse': True,
+            'allow_gpu': True,
+            # 'padding': 2
+        }))
         self.convs = nn.ModuleList([nn.Conv2d(1, x[1], (x[0], dimension))
                                     for x in filters])
 
     def forward(self, inputs, lens=None):
+        # batch_size, seq_len = inputs.size()
         inputs_embed = self.embedding.forward(inputs)
         # input channel
         inputs_embed = inputs_embed.unsqueeze(1)
         # sequeeze output channel
-        conv_outputs = [conv.forward(inputs_embed).squeeze(3)
+        conv_outputs = [F.relu(conv.forward(inputs_embed)).squeeze(3)
                         for conv in self.convs]
         max_pool_outputs = [F.max_pool1d(i, i.size(2)).squeeze(2)
                             for i in conv_outputs]
@@ -263,13 +282,14 @@ class CharCNN(nn.Module):
         return outputs
 
 
+@register_module('crf')
 class CRF(nn.Module):
-
-    def __init__(self, label_vocab):
+    def __init__(self, conf):
+        assert hasattr(conf, 'label_vocab')
 
         super(CRF, self).__init__()
 
-        self.label_vocab = label_vocab
+        self.label_vocab = label_vocab = getattr(conf, 'label_vocab')
         self.label_size = len(label_vocab) + 2
         self.start = self.label_size - 2
         self.end = self.label_size - 1
@@ -287,13 +307,6 @@ class CRF(nn.Module):
         pads = Variable(logits.data.new(batch_size, seq_len, 2).fill_(-100.0),
                         requires_grad=False)
         logits = torch.cat([logits, pads], dim=2)
-        # e_s = logits.data.new([-100.0] * label_num + [0, 100])
-        # e_s_mat = logits.data.new(logits.size()).fill_(0)
-        # for i in range(batch_size):
-        #     if lens[i] < seq_len:
-        #         # logits[i][lens[i]] += e_s
-        #         e_s_mat[i][lens[i]] = e_s
-        # logits += Variable(e_s_mat)
         return logits
 
     def calc_binary_score(self, labels, lens):
@@ -413,7 +426,30 @@ class CRF(nn.Module):
         return scores, paths
 
 
-class LstmCrf(nn.Module):
+class Model(nn.Module):
+    """Override the cuda function.
+    Used for top-level modules containing other modules.
+    It only works for modules without direct parameters."""
+
+    def __init__(self):
+        super(Model, self).__init__()
+        self.gpu = False
+
+    def cuda(self, device=None):
+        self.gpu = True
+        for module in self.children():
+            module.cuda(device)
+        return self
+
+    def cpu(self):
+        self.gpu = False
+        for module in self.children():
+            module.cpu()
+        return self
+
+
+@register_module('lstm_crf')
+class LstmCrf(Model):
     def __init__(self,
                  token_vocab,
                  label_vocab,
@@ -423,15 +459,16 @@ class LstmCrf(nn.Module):
                  char_embedding,
                  crf,
                  lstm,
-                 input_layer=None,
-                 univ_layer=None,
-                 spec_layer=None,
+                 input_layer,
+                 univ_fc_layer=None,
+                 spec_fc_layer=None,
+                 output_layer=None,
 
-                 embedding_dropout_prob=0,
+                 embed_dropout_prob=0,
                  lstm_dropout_prob=0,
                  linear_dropout_prob=0,
                  use_char_embedding=True,
-                 char_highway=None,
+                 char_highway=None
                  ):
         super(LstmCrf, self).__init__()
 
@@ -439,51 +476,51 @@ class LstmCrf(nn.Module):
         self.label_vocab = label_vocab
         self.char_vocab = char_vocab
         self.idx_label = {idx: label for label, idx in label_vocab.items()}
+        self.embed_dropout_prob = embed_dropout_prob
+        self.lstm_dropout_prob = lstm_dropout_prob
         self.use_char_embedding = use_char_embedding
 
         self.word_embedding = word_embedding
         self.char_embedding = char_embedding
+
         self.feat_dim = word_embedding.output_size
         if use_char_embedding:
             self.feat_dim += char_embedding.output_size
 
         self.lstm = lstm
         self.input_layer = input_layer
-        self.univ_layer = univ_layer
-        self.spec_layer = spec_layer
+        self.univ_fc_layer = univ_fc_layer
+        self.spec_fc_layer = spec_fc_layer
+        self.output_layer = output_layer
         self.crf = crf
         self.char_highway = char_highway
         self.lstm_dropout = nn.Dropout(p=lstm_dropout_prob)
-        self.embedding_dropout = nn.Dropout(p=embedding_dropout_prob)
+        self.embed_dropout = nn.Dropout(p=embed_dropout_prob)
         self.linear_dropout = nn.Dropout(p=linear_dropout_prob)
         self.label_size = len(label_vocab)
-        if spec_layer:
-            self.spec_gate = Linear(spec_layer.in_features,
-                                    spec_layer.out_features)
-
-    def cuda(self, device=None):
-        for module in self.children():
-            module.cuda(device)
-        return self
-
-    def cpu(self):
-        for module in self.children():
-            module.cpu()
-        return self
+        if spec_fc_layer:
+            self.spec_gate = Linear(Config({
+                'in_features': spec_fc_layer.in_features,
+                'out_features': spec_fc_layer.out_features
+            }))
 
     def forward_model(self, inputs, lens, chars=None, char_lens=None):
-        """From the input to the linear layer, not including the CRF layer.
+        """
+        From input to linear layer.
 
-        :param inputs: Input tensor of size batch_size * max_seq_len (word indexes).
-        :param lens: Sequence length tensor of size batch_size (sequence lengths).
-        :param chars: Input character tensor of size batch_size * max_seq_len * max_word_len (character indexes).
-        :param char_lens: Word length tensor of size (batch_size * max_seq_len) * max_word_len.
-        :return: Linear layer output tensor of size batch_size * max_seq_len * label_num.
+        :param inputs:
+        :param lens:
+        :param chars:
+        :param char_lens:
+        :return:
         """
         batch_size, seq_len = inputs.size()
 
         # Word embedding
         inputs_embed = self.word_embedding.forward(inputs)
+        if self.gpu:
+            inputs_embed = inputs_embed.cuda()
+
         # Character embedding
         if self.use_char_embedding:
             chars_embed = self.char_embedding.forward(chars, char_lens)
@@ -491,21 +528,22 @@ class LstmCrf(nn.Module):
                 chars_embed = self.char_highway.forward(chars_embed)
             chars_embed = chars_embed.view(batch_size, seq_len, -1)
             inputs_embed = torch.cat([inputs_embed, chars_embed], dim=2)
-        inputs_embed = self.embedding_dropout.forward(inputs_embed)
+
+        inputs_embed = self.embed_dropout.forward(inputs_embed)
 
         # LSTM layer
-        inputs_packed = R.pack_padded_sequence(inputs_embed,
-                                               lens.data.tolist(),
+        inputs_packed = R.pack_padded_sequence(inputs_embed, lens.data.tolist(),
                                                batch_first=True)
-        lstm_out, _ = self.lstm.forward(inputs_packed)
+        lstm_out, _ = self.lstm(inputs_packed)
         lstm_out, _ = R.pad_packed_sequence(lstm_out, batch_first=True)
+
         lstm_out = lstm_out.contiguous().view(-1, self.lstm.output_size)
         lstm_out = self.lstm_dropout.forward(lstm_out)
 
-        # Linear layer
-        univ_feats = self.univ_layer.forward(lstm_out)
-        if self.spec_layer:
-            spec_feats = self.spec_layer.forward(lstm_out)
+        # Fully-connected layer
+        univ_feats = self.univ_fc_layer.forward(lstm_out)
+        if self.spec_fc_layer is not None:
+            spec_feats = self.spec_fc_layer.forward(lstm_out)
             gate = F.sigmoid(self.spec_gate.forward(lstm_out))
             outputs = gate * spec_feats + (1 - gate) * univ_feats
         else:
@@ -515,15 +553,6 @@ class LstmCrf(nn.Module):
         return outputs
 
     def predict(self, inputs, labels, lens, chars=None, char_lens=None):
-        """From the input to the CRF output (prediction mode).
-
-        :param inputs: Input tensor of size batch_size * max_seq_len (word indexes).
-        :param labels: Gold labels.
-        :param lens: Sequence length tensor of size batch_size (sequence lengths).
-        :param chars: Input character tensor of size batch_size * max_seq_len * max_word_len (character indexes).
-        :param char_lens: Word length tensor of size (batch_size * max_seq_len) * max_word_len.
-        :return: Prediction and loss.
-        """
         self.eval()
         loglik, logits = self.loglik(inputs, labels, lens, chars, char_lens)
         loss = -loglik.mean()
