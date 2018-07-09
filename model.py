@@ -188,16 +188,16 @@ class Embedding(nn.Embedding):
         with open(path, 'r', encoding='utf-8') as r:
             if stats:
                 r.readline()
-            try:
-                for line in r:
+            for line in r:
+                try:
                     line = line.strip().split(' ')
                     token = line[0]
                     if token in vocab:
                         vector = self.weight.data.new(
                             [float(v) for v in line[1:]])
                         self.weight.data[vocab[token]] = vector
-            except UnicodeDecodeError as e:
-                print(e)
+                except UnicodeDecodeError as e:
+                    print(e)
 
 
 @register_module('lstm')
