@@ -43,6 +43,29 @@ def create_dataset(name, conf):
         raise ValueError('Dataset {} is not registered'.format(name))
 
 
+def compute_metadata(datasets):
+    """Compute tokens, labels, and characters in the given data sets.
+
+    :param datasets: A list of data sets.
+    :return: dicts of token, label, and character counts.
+    """
+    token_count = defaultdict(int)
+    label_count = defaultdict(int)
+    char_count = defaultdict(int)
+
+    for dataset in datasets:
+        if dataset:
+            t, l, c = dataset.metadata()
+            for k, v in t.items():
+                token_count[k] += v
+            for k, v in l.items():
+                label_count[k] += v
+            for k, v in c.items():
+                char_count[k] += v
+
+    return token_count, label_count, char_count
+
+
 def count2vocab(counts,
                 start_idx=0,
                 ignore_case=False,
@@ -248,10 +271,10 @@ class SequenceDataset(object):
             label_idxs = [label_vocab[l] for l in labels]
             self.dataset_numberized.append((token_idxs, label_idxs, char_idxs))
 
-    def sample_batches(self, shuffle=True):
+    def sample_batches(self, shuffle_inst=True):
         self.batches = []
         inst_idxs = [i for i in range(len(self.dataset_numberized))]
-        if shuffle:
+        if shuffle_inst:
             shuffle(inst_idxs)
         self.batches = [inst_idxs[i:i + self.batch_size] for i in
                         range(0, len(self.dataset_numberized), self.batch_size)]
@@ -298,13 +321,14 @@ class SequenceDataset(object):
 
         return tokens, labels, chars, seq_lens, char_lens
 
-    def get_dataset(self, volatile=False, gpu=False, batch_size=100):
+    def get_dataset(self, volatile=False, gpu=False, batch_size=100,
+                    shuffle_inst=False):
         batches_ = self.batches
         batch_size_ = self.batch_size
 
         self.batches = []
         self.batch_size = batch_size
-        self.sample_batches(shuffle=False)
+        self.sample_batches(shuffle_inst=shuffle_inst)
 
         while self.batches:
             yield self.get_batch(volatile, gpu)

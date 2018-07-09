@@ -255,6 +255,7 @@ class CharCNN(nn.Module):
         vocab_size = getattr(conf, 'vocab_size')
         dimension = getattr(conf, 'dimension')
         filters = getattr(conf, 'filters')
+        padding = getattr(conf, 'padding', 2)
 
         self.output_size = sum([x[1] for x in filters])
         self.embedding = Embedding(Config({
@@ -263,7 +264,7 @@ class CharCNN(nn.Module):
             'padding_idx': 0,
             'sparse': True,
             'allow_gpu': True,
-            # 'padding': 2
+            'padding': padding
         }))
         self.convs = nn.ModuleList([nn.Conv2d(1, x[1], (x[0], dimension))
                                     for x in filters])
