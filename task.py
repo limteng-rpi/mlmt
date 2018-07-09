@@ -457,10 +457,10 @@ def build_tasks_from_file(conf_path, options=None):
                 crf=components[model_conf.crf],
                 lstm=components[model_conf.lstm],
                 input_layer=None,
-                univ_layer=components[model_conf.univ_layer],
-                spec_layer=components[model_conf.spec_layer] if hasattr(
+                univ_fc_layer=components[model_conf.univ_layer],
+                spec_fc_layer=components[model_conf.spec_layer] if hasattr(
                     model_conf, 'spec_linear') else None,
-                embedding_dropout_prob=model_conf.embed_dropout,
+                embed_dropout_prob=model_conf.embed_dropout,
                 lstm_dropout_prob=model_conf.lstm_dropout,
                 linear_dropout_prob=model_conf.linear_dropout,
                 char_highway=components[model_conf.char_highway] if hasattr(
