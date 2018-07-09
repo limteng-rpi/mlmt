@@ -1,18 +1,52 @@
 import json
 import logging
 import constant as C
+import conlleval
 
 
-def get_logger(name, level=C.LOGGING_LEVEL):
+def get_logger(name, level=C.LOGGING_LEVEL, log_file=None):
     """Get a logger by name.
-    
+
     :param name: Logger name (usu. __name__).
     :param level: Logging level (default=logging.INFO).
     """
     logger = logging.getLogger(name)
     logger.addHandler(logging.StreamHandler())
+    if log_file:
+        logger.addHandler(logging.FileHandler(log_file, encoding='utf-8'))
     logger.setLevel(level)
     return logger
+
+
+def evaluate(results, idx_token, idx_label, writer=None):
+    """Evaluate prediction results.
+
+    :param results: A List of which each item is a tuple
+        (predictions, gold labels, sequence lengths, tokens) of a batch.
+    :param idx_token: Index to token dictionary.
+    :param idx_label: Index to label dictionary.
+    :param writer: An object (file object) with a write() function. Extra output.
+    :return: F-score, precision, and recall.
+    """
+    # b: batch, s: sequence
+    outputs = []
+    for preds_b, golds_b, len_b, tokens_b in results:
+        for preds_s, golds_s, len_s, tokens_s in zip(preds_b, golds_b, len_b, tokens_b):
+            l = int(len_s.data[0])
+            preds_s = preds_s.data.tolist()[:l]
+            golds_s = golds_s.data.tolist()[:l]
+            tokens_s = tokens_s.data.tolist()[:l]
+            for p, g, t in zip(preds_s, golds_s, tokens_s):
+                token = idx_token.get(t, C.UNKNOWN_TOKEN)
+                outputs.append('{} {} {}'.format(
+                    token, idx_label[g], idx_label[p]))
+            outputs.append('')
+    counts = conlleval.evaluate(results)
+    overall, by_type = conlleval.metrics(counts)
+    conlleval.report(counts)
+    if writer:
+        conlleval.report(writer)
+    return overall.fscore, overall.prec, overall.rec
 
 
 class Config(dict):
