@@ -356,7 +356,7 @@ def build_tasks_from_file(conf_path, options=None):
                                               start_idx=0,
                                               sort=True)
     char_vocab = count2vocab([c[2] for c in dataset_counts.values()],
-                             ignore_case=False, start_idx=0)
+                             ignore_case=False, start_idx=1)
 
     # Report stats
     for lang, vocab in lang_token_vocabs.items():
