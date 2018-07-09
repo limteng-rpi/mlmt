@@ -41,11 +41,12 @@ def evaluate(results, idx_token, idx_label, writer=None):
                 outputs.append('{} {} {}'.format(
                     token, idx_label[g], idx_label[p]))
             outputs.append('')
-    counts = conlleval.evaluate(results)
+    counts = conlleval.evaluate(outputs)
     overall, by_type = conlleval.metrics(counts)
     conlleval.report(counts)
     if writer:
-        conlleval.report(writer)
+        conlleval.report(counts, out=writer)
+        writer.flush()
     return overall.fscore, overall.prec, overall.rec
 
 

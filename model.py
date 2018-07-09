@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.init as I
 import torch.nn.utils.rnn as R
 import torch.nn.functional as F
+import traceback
 
 from util import get_logger, Config
 from torch.autograd import Variable
@@ -138,6 +139,7 @@ class Embedding(nn.Embedding):
         self.file = file = getattr(conf, 'file', None)
         self.stats = stats = getattr(conf, 'stats', False)
         self.vocab = vocab = getattr(conf, 'vocab', None)
+        self.ignore_case = getattr(conf, 'ignore_case', True)
 
         super(Embedding, self).__init__(num_embeddings + padding,
                                         embedding_dim,
@@ -158,14 +160,14 @@ class Embedding(nn.Embedding):
     def initialize(self):
         I.xavier_normal(self.weight.data)
 
-    def cuda(self, device=None):
-        self.gpu = True
-        if self.allow_gpu:
-            return super(Embedding, self).cuda(device=None)
-
-    def cpu(self):
-        self.gpu = False
-        return super(Embedding, self).cpu()
+    # def cuda(self, device=None):
+    #     self.gpu = True
+    #     if self.allow_gpu:
+    #         return super(Embedding, self).cuda(device=None)
+    #
+    # def cpu(self):
+    #     self.gpu = False
+    #     return super(Embedding, self).cpu()
 
     def save(self, path, vocab, stats=False):
         """Save embedding to file.
@@ -188,16 +190,26 @@ class Embedding(nn.Embedding):
         with open(path, 'r', encoding='utf-8') as r:
             if stats:
                 r.readline()
-            for line in r:
+            for line_idx, line in enumerate(r):
                 try:
-                    line = line.strip().split(' ')
-                    token = line[0]
+                    segs = line.rstrip().split(' ')
+                    # if len(segs) != self.embedding_dim + 1:
+                    #     continue
+                    token = segs[0]
+                    if self.ignore_case:
+                        token = token.lower()
                     if token in vocab:
                         vector = self.weight.data.new(
-                            [float(v) for v in line[1:]])
+                            [float(v) for v in segs[1:]])
                         self.weight.data[vocab[token]] = vector
                 except UnicodeDecodeError as e:
-                    print(e)
+                    traceback.print_exc()
+                except ValueError as e:
+                    traceback.print_exc()
+                    print('line {}'.format(line_idx), line)
+                except RuntimeError as e:
+                    traceback.print_exc()
+                    print('line {}'.format(line_idx), line)
 
 
 @register_module('lstm')
@@ -460,7 +472,7 @@ class LstmCrf(Model):
                  char_embedding,
                  crf,
                  lstm,
-                 input_layer,
+                 input_layer=None,
                  univ_fc_layer=None,
                  spec_fc_layer=None,
                  output_layer=None,

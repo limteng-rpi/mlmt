@@ -144,7 +144,7 @@ class ConllParser(object):
         self.separator = getattr(conf, 'separator', '\t')
         self.token_col = getattr(conf, 'token_col', 0)
         self.label_col = getattr(conf, 'label_col', 1)
-        self.comment = getattr(conf, 'comment', True)
+        self.skip_comment = getattr(conf, 'skip_comment', True)
 
     def parse(self, path):
         """
@@ -159,7 +159,9 @@ class ConllParser(object):
                     continue
                 if line:
                     segs = line.split(self.separator)
-                    token, label = segs[self.token_col], segs[self.label_col]
+                    token, label = segs[self.token_col].strip(), segs[self.label_col]
+                    if label in {'B-O', 'I-O', 'E-O', 'S-O'}:
+                        label = 'O'
                     current_doc.append((token, label))
                 elif current_doc:
                     tokens = []
@@ -335,3 +337,6 @@ class SequenceDataset(object):
 
         self.batches = batches_
         self.batch_size = batch_size_
+
+    def batch_num(self, batch_size):
+        return -(-len(self.dataset_numberized) // batch_size)
