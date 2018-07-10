@@ -118,10 +118,16 @@ if embed_file:
             embed_r.readline()
         for line in embed_r:
             try:
-                line = line.strip().split(' ')
-                token = line[0]
+                # line = line.rstrip().split(' ')
+                # token = line[0]
+                token = line[:line.find(' ')]
+                if word_ignore_case:
+                    token = token.lower()
                 if token not in token_vocab:
                     token_vocab[token] = len(token_vocab) + C.EMBED_START_IDX
+                if token.lower() not in token_vocab:
+                    token_vocab[token.lower()] = len(token_vocab) \
+                                                 + C.EMBED_START_IDX
             except UnicodeDecodeError as e:
                 logger.warning(e)
 idx_token = {idx: token for token, idx in token_vocab.items()}
@@ -211,7 +217,8 @@ try:
     for epoch in range(args.max_epoch):
         logger.info('Epoch {}: Training'.format(epoch))
 
-        for ds in ['train', 'dev', 'test']:
+        # for ds in ['train', 'dev', 'test']:
+        for ds in ['train', 'dev']:
             dataset = datasets[ds]
             epoch_loss = []
             results = []
@@ -226,7 +233,6 @@ try:
                 progress.update(1)
                 tokens, labels, chars, seq_lens, char_lens = batch
                 if ds == 'train':
-                    lstm_crf.train()
                     loglik, _ = lstm_crf.loglik(
                         tokens, labels, seq_lens, chars, char_lens)
                     loss = -loglik.mean()
@@ -238,7 +244,6 @@ try:
                     optimizer.step()
 
                 else:
-                    lstm_crf.eval()
                     pred, loss = lstm_crf.predict(
                         tokens, labels, seq_lens, chars, char_lens)
                     results.append((pred, labels, seq_lens, tokens))
@@ -261,6 +266,8 @@ try:
         for p in optimizer.param_groups:
             p['lr'] = lr
         logger.info('New learning rate: {}'.format(lr))
+
+    logger.info('Best score: {}'.format(best_dev_score))
 except KeyboardInterrupt:
     traceback.print_exc()
     if log_writer:

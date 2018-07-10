@@ -267,6 +267,7 @@ class SequenceDataset(object):
             if token_ignore_case:
                 tokens = [t.lower() for t in tokens]
             token_idxs = [token_vocab[x] if x in token_vocab
+                          else token_vocab[x.lower()] if x.lower() in token_vocab
                           else C.UNKNOWN_TOKEN_INDEX for x in tokens]
             if label_ignore_case:
                 labels = [l.lower() for l in labels]
