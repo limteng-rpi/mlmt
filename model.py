@@ -562,15 +562,22 @@ class LstmCrf(Model):
         else:
             outputs = univ_feats
         outputs = outputs.view(batch_size, seq_len, self.label_size)
+        # outputs = self.linear_dropout.forward(outputs)
 
         return outputs
 
     def predict(self, inputs, labels, lens, chars=None, char_lens=None):
         self.eval()
+        # for module in self.children():
+        #     module.eval()
+
         loglik, logits = self.loglik(inputs, labels, lens, chars, char_lens)
         loss = -loglik.mean()
         scores, preds = self.crf.viterbi_decode(logits, lens)
+
         self.train()
+        # for module in self.children():
+        #     module.train()
         return preds, loss
 
     def loglik(self, inputs, labels, lens, chars=None, char_lens=None):
