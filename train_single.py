@@ -4,6 +4,7 @@ import traceback
 
 import tqdm
 
+import torch
 from torch import optim
 from torch.nn.utils import clip_grad_norm
 
@@ -19,16 +20,17 @@ from task import NameTagging, MultiTask
 
 timestamp = time.strftime('%Y%m%d_%H%M%S', time.gmtime())
 
-
 argparser = ArgumentParser()
 
 argparser.add_argument('--train', help='Path to the training set file')
 argparser.add_argument('--dev', help='Path to the dev set file')
 argparser.add_argument('--test', help='Path to the test set file')
 argparser.add_argument('--log', help='Path to the log dir')
+argparser.add_argument('--model', help='Path to the model file')
 argparser.add_argument('--batch_size', default=10, type=int, help='Batch size')
 argparser.add_argument('--max_epoch', default=100, type=int)
-argparser.add_argument('--embedding', help='Path to the pre-trained embedding file')
+argparser.add_argument('--embedding',
+                       help='Path to the pre-trained embedding file')
 argparser.add_argument('--embed_skip_first', default=True,
                        help='Skip the first line of the embedding file')
 argparser.add_argument('--word_embed_dim', type=int, default=100,
@@ -59,6 +61,9 @@ argparser.add_argument('--gpu_idx', default=0, type=int)
 args = argparser.parse_args()
 
 # Parameters
+model_file = args.model
+assert model_file, 'Model output path is required'
+
 embed_file = args.embedding
 charcnn_filters = [[int(f.split(',')[0]), int(f.split(',')[1])]
                    for f in args.charcnn_filters.split(';')]
@@ -113,13 +118,12 @@ char_vocab = count2vocab([char_count],
                          start_idx=C.CHAR_EMBED_START_IDX)
 if embed_file:
     logger.info('Scaning pre-trained embeddings')
+    token_vocab = {}
     with open(embed_file, 'r', encoding='utf-8') as embed_r:
         if args.embed_skip_first:
             embed_r.readline()
         for line in embed_r:
             try:
-                # line = line.rstrip().split(' ')
-                # token = line[0]
                 token = line[:line.find(' ')]
                 if word_ignore_case:
                     token = token.lower()
@@ -210,6 +214,23 @@ if use_gpu:
 optimizer = optim.SGD(filter(lambda p: p.requires_grad, lstm_crf.parameters()),
                       lr=args.lr, momentum=args.momentum)
 
+state = {
+    'model': {
+        'word_embed': word_embed,
+        'char_cnn': char_cnn,
+        'char_highway': char_highway,
+        'lstm': lstm,
+        'crf': crf,
+        'output_linear': output_linear,
+        'lstm_crf': lstm_crf
+    },
+    'vocab': {
+        'token': token_vocab,
+        'label': label_vocab,
+        'char': char_vocab,
+    }
+}
+
 try:
     global_step = 0
     best_dev_score = 0.0
@@ -223,10 +244,11 @@ try:
             epoch_loss = []
             results = []
 
-            progress = tqdm.tqdm(total=dataset.batch_num(args.batch_size), mininterval=1, desc=ds)
+            progress = tqdm.tqdm(total=dataset.batch_num(args.batch_size),
+                                 mininterval=1, desc=ds)
             for batch in dataset.get_dataset(
                     gpu=use_gpu,
-                    shuffle_inst=ds=='train',
+                    shuffle_inst=ds == 'train',
                     batch_size=args.batch_size):
                 global_step += 1
                 optimizer.zero_grad()
@@ -258,8 +280,10 @@ try:
                 fscore, prec, rec = evaluate(
                     results, idx_token, idx_label, writer=log_writer)
                 if ds == 'dev' and fscore > best_dev_score:
+                    logger.info('New best score: {:.4f}'.format(fscore))
                     best_dev_score = fscore
-                    # TODO: save the best model
+                    logger.info('Saving the current model to {}'.format(model_file))
+                    torch.save(state, model_file)
 
         # learning rate decay
         lr = args.lr * args.decay_rate ** (global_step / args.decay_step)
