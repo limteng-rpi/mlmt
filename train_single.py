@@ -257,11 +257,11 @@ try:
                     gpu=use_gpu,
                     shuffle_inst=ds == 'train',
                     batch_size=args.batch_size):
-                global_step += 1
                 optimizer.zero_grad()
                 progress.update(1)
                 tokens, labels, chars, seq_lens, char_lens = batch
                 if ds == 'train':
+                    global_step += 1
                     loglik, _ = lstm_crf.loglik(
                         tokens, labels, seq_lens, chars, char_lens)
                     loss = -loglik.mean()
