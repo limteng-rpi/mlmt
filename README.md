@@ -1,5 +1,3 @@
-*The code is being refactored :)*
-
 ## Requirements
 * Python 3.5+
 * Pytorch 0.3.1
