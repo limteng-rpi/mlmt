@@ -1,9 +1,9 @@
 *The code is being refactored :)*
 
 ## Requirements
-Python 3.5+
-Pytorch 0.3.1
-tqdm (used to display training progress)
+* Python 3.5+
+* Pytorch 0.3.1
+* tqdm (used to display training progress)
 
 ## Architecture
 ![Overall architecture](https://github.com/limteng-rpi/mlmt/blob/master/image/framework.png)
