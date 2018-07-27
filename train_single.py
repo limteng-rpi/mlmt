@@ -36,8 +36,6 @@ argparser.add_argument('--embed_skip_first', dest='embed_skip_first',
 argparser.set_defaults(embed_skip_first=True)
 argparser.add_argument('--word_embed_dim', type=int, default=100,
                        help='Word embedding dimension')
-# argparser.add_argument('--word_embed_case', type=int, default=0,
-#                        help='Word embedding case-sensitive')
 argparser.add_argument('--word_ignore_case', dest='word_ignore_case',
                        action='store_true')
 argparser.set_defaults(word_ignore_case=False)
@@ -73,14 +71,12 @@ embed_file = args.embedding
 charcnn_filters = [[int(f.split(',')[0]), int(f.split(',')[1])]
                    for f in args.charcnn_filters.split(';')]
 use_gpu = (args.gpu == 1)
-# word_ignore_case = (args.word_embed_case == 0)
 word_ignore_case = args.word_ignore_case
 log_writer = None
 if args.log:
     log_file = os.path.join(args.log, 'log.{}.txt'.format(timestamp))
     log_writer = open(log_file, 'a', encoding='utf-8')
     logger = get_logger(__name__, log_file=log_file)
-    # logger.info('Log file: {}'.format(log_file))
 else:
     logger = get_logger(__name__)
 
