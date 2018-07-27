@@ -16,7 +16,6 @@ from data import (
     SequenceDataset, ConllParser,
     compute_metadata, count2vocab, numberize_datasets
 )
-from task import NameTagging, MultiTask
 
 timestamp = time.strftime('%Y%m%d_%H%M%S', time.gmtime())
 
@@ -31,12 +30,17 @@ argparser.add_argument('--batch_size', default=10, type=int, help='Batch size')
 argparser.add_argument('--max_epoch', default=100, type=int)
 argparser.add_argument('--embedding',
                        help='Path to the pre-trained embedding file')
-argparser.add_argument('--embed_skip_first', default=True,
+argparser.add_argument('--embed_skip_first', dest='embed_skip_first',
+                       action='store_true',
                        help='Skip the first line of the embedding file')
+argparser.set_defaults(embed_skip_first=True)
 argparser.add_argument('--word_embed_dim', type=int, default=100,
                        help='Word embedding dimension')
-argparser.add_argument('--word_embed_case', type=int, default=0,
-                       help='Word embedding case-sensitive')
+# argparser.add_argument('--word_embed_case', type=int, default=0,
+#                        help='Word embedding case-sensitive')
+argparser.add_argument('--word_ignore_case', dest='word_ignore_case',
+                       action='store_true')
+argparser.set_defaults(word_ignore_case=True)
 argparser.add_argument('--char_embed_dim', type=int, default=50,
                        help='Character embedding dimension')
 argparser.add_argument('--charcnn_filters', default='2,25;3,25;4,25',
@@ -63,12 +67,14 @@ args = argparser.parse_args()
 # Parameters
 model_file = args.model
 assert model_file, 'Model output path is required'
+model_file = os.path.join(args.model, 'model.{}.mdl'.format(timestamp))
 
 embed_file = args.embedding
 charcnn_filters = [[int(f.split(',')[0]), int(f.split(',')[1])]
                    for f in args.charcnn_filters.split(';')]
 use_gpu = (args.gpu == 1)
-word_ignore_case = (args.word_embed_case == 0)
+# word_ignore_case = (args.word_embed_case == 0)
+word_ignore_case = args.word_ignore_case
 log_writer = None
 if args.log:
     log_file = os.path.join(args.log, 'log.{}.txt'.format(timestamp))
@@ -86,10 +92,10 @@ logger.info('----------')
 
 # Parser for CoNLL format file
 conll_parser = ConllParser(Config({
-    'separator': ' ',
+    'separator': '\t',
     'token_col': 0,
-    'label_col': 3,
-    'skip_comment': False,
+    'label_col': 1,
+    'skip_comment': True,
 }))
 
 # Load datasets
@@ -208,6 +214,7 @@ lstm_crf = LstmCrf(
 )
 
 if use_gpu:
+    torch.cuda.set_device(args.gpu_idx)
     lstm_crf.cuda()
 
 # Task
@@ -216,14 +223,15 @@ optimizer = optim.SGD(filter(lambda p: p.requires_grad, lstm_crf.parameters()),
 
 state = {
     'model': {
-        'word_embed': word_embed,
-        'char_cnn': char_cnn,
-        'char_highway': char_highway,
-        'lstm': lstm,
-        'crf': crf,
-        'output_linear': output_linear,
-        'lstm_crf': lstm_crf
+        'word_embed': word_embed.state_dict(),
+        'char_cnn': char_cnn.state_dict(),
+        'char_highway': char_highway.state_dict(),
+        'lstm': lstm.state_dict(),
+        'crf': crf.state_dict(),
+        'output_linear': output_linear.state_dict(),
+        'lstm_crf': lstm_crf.state_dict()
     },
+    'args': vars(args),
     'vocab': {
         'token': token_vocab,
         'label': label_vocab,
@@ -238,8 +246,7 @@ try:
     for epoch in range(args.max_epoch):
         logger.info('Epoch {}: Training'.format(epoch))
 
-        # for ds in ['train', 'dev', 'test']:
-        for ds in ['train', 'dev']:
+        for ds in ['train', 'dev', 'test']:
             dataset = datasets[ds]
             epoch_loss = []
             results = []
@@ -282,7 +289,8 @@ try:
                 if ds == 'dev' and fscore > best_dev_score:
                     logger.info('New best score: {:.4f}'.format(fscore))
                     best_dev_score = fscore
-                    logger.info('Saving the current model to {}'.format(model_file))
+                    logger.info(
+                        'Saving the current model to {}'.format(model_file))
                     torch.save(state, model_file)
 
         # learning rate decay
