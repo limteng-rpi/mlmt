@@ -18,13 +18,17 @@ Pre-trained word embeddings for English, Dutch, Spanish, Russian, and Chechen ca
 Train a new model:
 
 ```
-python train_single.py --train <PATH/TO/THE/TRAINING/FILE> --dev <PATH/TO/THE/DEV/FILE> --test <PATH/TO/THE/TEST/FILE> --log <LOG/DIRECTORY> --model <MODEL/DIRECTORY> --max_epoch 50 --embedding <PATH/TO/THE/PRETRAINED/EMBEDDING/FILE> --embed_skip_first --word_embed_dim 100 --char_embed_dim 50
+python train_single.py --train <PATH/TO/THE/TRAINING/FILE> --dev <PATH/TO/THE/DEV/FILE>
+  --test <PATH/TO/THE/TEST/FILE> --log <LOG/DIRECTORY> --model <MODEL/DIRECTORY>
+  --max_epoch 50 --embedding <PATH/TO/THE/PRETRAINED/EMBEDDING/FILE> --embed_skip_first
+  --word_embed_dim 100 --char_embed_dim 50
 ```
 
 Evalute the trained model:
 
 ```
-python eval_single.py --model <PATH/TO/THE/MODEL/FILE> --file <PATH/TO/THE/DATA/FILE> --log <LOG/DIRECTORY>
+python eval_single.py --model <PATH/TO/THE/MODEL/FILE> --file <PATH/TO/THE/DATA/FILE>
+  --log <LOG/DIRECTORY>
 ```
 
 ## Multi-task Model
