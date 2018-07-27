@@ -40,7 +40,7 @@ argparser.add_argument('--word_embed_dim', type=int, default=100,
 #                        help='Word embedding case-sensitive')
 argparser.add_argument('--word_ignore_case', dest='word_ignore_case',
                        action='store_true')
-argparser.set_defaults(word_ignore_case=True)
+argparser.set_defaults(word_ignore_case=False)
 argparser.add_argument('--char_embed_dim', type=int, default=50,
                        help='Character embedding dimension')
 argparser.add_argument('--charcnn_filters', default='2,25;3,25;4,25',
@@ -300,6 +300,9 @@ try:
         logger.info('New learning rate: {}'.format(lr))
 
     logger.info('Best score: {}'.format(best_dev_score))
+    logger.info('Model file: {}'.format(model_file))
+    if args.log:
+        logger.info('Log file: {}'.format(log_file))
 except KeyboardInterrupt:
     traceback.print_exc()
     if log_writer:
