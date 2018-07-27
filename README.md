@@ -1,5 +1,10 @@
 *The code is being refactored :)*
 
+## Requirements
+Python 3.5+
+Pytorch 0.3.1
+tqdm (used to display training progress)
+
 ## Architecture
 ![Overall architecture](https://github.com/limteng-rpi/mlmt/blob/master/image/framework.png)
 **Figure**: Multi-lingual Multi-task Architecture
@@ -7,6 +12,26 @@
 ## Pre-trained word embeddings
 
 Pre-trained word embeddings for English, Dutch, Spanish, Russian, and Chechen can be found at [this page](http://www.limteng.com/research/2018/05/14/pretrained-word-embeddings.html).
+
+## Single-task Mono-lingual Model
+
+Train a new model:
+
+```
+python train_single.py --train <PATH/TO/THE/TRAINING/FILE> --dev <PATH/TO/THE/DEV/FILE> --test <PATH/TO/THE/TEST/FILE> --log <LOG/DIRECTORY> --model <MODEL/DIRECTORY> --max_epoch 50 --embedding <PATH/TO/THE/PRETRAINED/EMBEDDING/FILE> --embed_skip_first --word_embed_dim 100 --char_embed_dim 50
+```
+
+Evalute the trained model:
+
+```
+python eval_single.py --model <PATH/TO/THE/MODEL/FILE> --file <PATH/TO/THE/DATA/FILE> --log <LOG/DIRECTORY>
+```
+
+## Multi-task Model
+
+In my original code, I use the `build_tasks_from_file` function in `task.py` to build the whole architecture from a configuration file (see the `Configuration` section). `pipeline.py` shows how to use this function.
+
+I'm writing new scripts similar to `train_single.py` and `eval_single.py`.
 
 ## Configuration
 
