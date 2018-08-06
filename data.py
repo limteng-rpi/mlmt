@@ -220,6 +220,7 @@ class SequenceDataset(object):
         self.dataset = []
         self.batches = []
         self.dataset_numberized = []
+        self.doc_num = 0
 
         self.load()
 
@@ -237,6 +238,7 @@ class SequenceDataset(object):
             self.dataset = [x for x in self.parser.parse(self.path)
                             if uniform(0, 1) < self.sample
                             and len(x[0]) < self.max_len]
+        self.doc_num = len(self.dataset)
 
     def metadata(self):
         token_count = Counter()
@@ -282,9 +284,9 @@ class SequenceDataset(object):
         self.batches = [inst_idxs[i:i + self.batch_size] for i in
                         range(0, len(self.dataset_numberized), self.batch_size)]
 
-    def get_batch(self, volatile=False, gpu=False):
+    def get_batch(self, volatile=False, gpu=False, shuffle_inst=True):
         if len(self.batches) == 0:
-            self.sample_batches()
+            self.sample_batches(shuffle_inst)
 
         batch = self.batches.pop()
         batch = [self.dataset_numberized[idx] for idx in batch]
