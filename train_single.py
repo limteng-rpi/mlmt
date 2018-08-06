@@ -299,7 +299,7 @@ try:
     logger.info('Model file: {}'.format(model_file))
     if args.log:
         logger.info('Log file: {}'.format(log_file))
-except KeyboardInterrupt:
+except Exception:
     traceback.print_exc()
     if log_writer:
         log_writer.close()
