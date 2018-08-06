@@ -642,4 +642,4 @@ try:
 except Exception:
     traceback.print_exc()
     if log_writer:
-        log_writer
+        log_writer.close()
