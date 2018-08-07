@@ -18,9 +18,9 @@ Pre-trained word embeddings for English, Dutch, Spanish, Russian, and Chechen ca
 Train a new model:
 
 ```
-python train_single.py --train <PATH/TO/THE/TRAINING/FILE> --dev <PATH/TO/THE/DEV/FILE>
-  --test <PATH/TO/THE/TEST/FILE> --log <LOG/DIRECTORY> --model <MODEL/DIRECTORY>
-  --max_epoch 50 --embedding <PATH/TO/THE/PRETRAINED/EMBEDDING/FILE> --embed_skip_first
+python train_single.py --train <PATH> --dev <PATH>
+  --test <PATH> --log <LOG_DIRECTORY> --model <MODEL_DIRECTORY>
+  --max_epoch 50 --embedding <PATH> --embed_skip_first
   --word_embed_dim 100 --char_embed_dim 50
 ```
 
@@ -35,7 +35,17 @@ python eval_single.py --model <PATH/TO/THE/MODEL/FILE> --file <PATH/TO/THE/DATA/
 
 In my original code, I use the `build_tasks_from_file` function in `task.py` to build the whole architecture from a configuration file (see the `Configuration` section). `pipeline.py` shows how to use this function.
 
-I'm writing new scripts similar to `train_single.py` and `eval_single.py`.
+Train a new model:
+
+```
+python train_multi.py --train_tgt <PATH> --dev_tgt <PATH> 
+  --test_tgt <PATH> --train_cl <PATH> --dev_cl <PATH>
+  --test_cl <PATH> --train_ct <PATH> --dev_ct <PATH>
+  --test_ct <PATH> --train_clct <PATH> --dev_clct <PATH>
+  --test_clct <PATH> --log <LOG_DIRECTORY>
+  --model <MODEL_DIRECTORY> --max_epoch 50
+  --embedding1 <PATH> --embedding2 <PATH> --word_embed_dim 50
+```
 
 ## Configuration
 
