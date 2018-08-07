@@ -558,7 +558,7 @@ try:
     best_dev_score = 0.0
 
     for epoch in range(args.max_epoch):
-        logger.info('Epoch {}: Training'.format(epoch))
+        logger.info('Epoch {}: Training'.format(epoch + 1))
 
         for ds in ['train', 'dev', 'test']:
             epoch_loss = []
