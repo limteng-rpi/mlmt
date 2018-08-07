@@ -543,15 +543,15 @@ state = {
 }
 
 # Calculate mixing rates
-r_tgt = 1.0
+r_tgt = math.sqrt(train_set_tgt.doc_num)
 r_cl = 1.0 * .1 * math.sqrt(datasets['cl']['train'].doc_num)
 r_ct = .1 * 1.0 * math.sqrt(datasets['ct']['train'].doc_num)
 r_clct = .1 * .1 * math.sqrt(datasets['clct']['train'].doc_num)
 r_sum = r_tgt + r_cl + r_ct + r_clct
 
-num_cl = datasets['cl']['train'].doc_num * (r_cl / r_tgt) // batch_size
-num_ct = datasets['ct']['train'].doc_num * (r_ct / r_tgt) // batch_size
-num_clct = datasets['clct']['train'].doc_num * (r_clct / r_tgt) // batch_size
+num_cl = int(datasets['cl']['train'].doc_num * (r_cl / r_tgt) // batch_size)
+num_ct = int(datasets['ct']['train'].doc_num * (r_ct / r_tgt) // batch_size)
+num_clct = int(datasets['clct']['train'].doc_num * (r_clct / r_tgt) // batch_size)
 
 try:
     global_step = 0
@@ -562,8 +562,6 @@ try:
 
         for ds in ['train', 'dev', 'test']:
             epoch_loss = []
-            results = []
-
 
             if ds =='train':
                 batches = ['tgt'] * train_set_tgt.batch_num(batch_size) \
@@ -599,10 +597,11 @@ try:
 
             else:
                 for task in ['tgt', 'cl', 'ct', 'clct']:
+                    results = []
                     progress = tqdm.tqdm(
                         total=datasets[task][ds].batch_num(C.EVAL_BATCH_SIZE),
                         mininterval=1,
-                        desc=ds)
+                        desc='{} {}'.format(task, ds))
                     for batch in datasets[task][ds].get_dataset(
                             gpu=use_gpu,
                             shuffle_inst=False,
@@ -619,13 +618,13 @@ try:
                         results.append((pred, labels, seq_lens, tokens))
                     progress.close()
 
-                fscore, prec, rec = evaluate(
-                    results, idx_tokens[task], idx_labels[task], writer=log_writer)
-                if ds == 'dev' and task == 'tgt' and fscore > best_dev_score:
-                    logger.info('New best score: {:.4f}'.format(fscore))
-                    best_dev_score = fscore
-                    logger.info('Saving the model to {}'.format(model_file))
-                    torch.save(state, model_file)
+                    fscore, prec, rec = evaluate(
+                        results, idx_tokens[task], idx_labels[task],writer=log_writer)
+                    if ds == 'dev' and task == 'tgt' and fscore > best_dev_score:
+                        logger.info('New best score: {:.4f}'.format(fscore))
+                        best_dev_score = fscore
+                        logger.info('Saving the model to {}'.format(model_file))
+                        torch.save(state, model_file)
 
         # learning rate decay
         lr = args.lr * args.decay_rate ** (global_step / args.decay_step)
