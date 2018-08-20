@@ -1,3 +1,8 @@
+## TODOs
+
+* Implement `eval_multi.py`.
+* Revise `build_tasks_from_file()` to support case-sensitive word embeddings.
+
 ## Requirements
 * Python 3.5+
 * Pytorch 0.3.1
