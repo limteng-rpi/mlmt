@@ -1,3 +1,5 @@
+I made modifications to a few functions in `data.py` and `model.py` when implementing `train_single.py`, `eval_single.py`, and `train_multi.py`. Not sure if `pipeline.py` was affected. I'll test it and finish the todo list as soon as possible.
+
 ## TODOs
 
 * Implement `eval_multi.py`.
