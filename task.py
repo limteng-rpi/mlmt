@@ -434,7 +434,7 @@ def build_tasks_from_file(conf_path, options=None):
         if cpnt_conf.model == 'lstm':
             cpnt_conf.input_size = char_embed_dim + word_embed_dim
         if cpnt_conf.model == 'highway' and cpnt_conf.position == 'char':
-            cpnt_conf.size == char_embed_dim
+            cpnt_conf.size = char_embed_dim
 
     # Create components
     logger.info('Creating components')
