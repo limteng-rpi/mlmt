@@ -1,3 +1,10 @@
+I made modifications to a few functions in `data.py` and `model.py` when implementing `train_single.py`, `eval_single.py`, and `train_multi.py`. Not sure if `pipeline.py` was affected. I'll test it and finish the todo list as soon as possible.
+
+## TODOs
+
+* Implement `eval_multi.py`.
+* Revise `build_tasks_from_file()` to support case-sensitive word embeddings.
+
 ## Requirements
 * Python 3.5+
 * Pytorch 0.3.1
