@@ -5,27 +5,10 @@ import torch.nn.utils.rnn as R
 import torch.nn.functional as F
 import traceback
 
-from util import get_logger, Config
-from torch.autograd import Variable
+import numpy as np
+import logging
 
-logger = get_logger(__name__)
-
-MODULES = {}
-
-
-def register_module(name):
-    def register(cls):
-        if name not in MODULES:
-            MODULES[name] = cls
-        return cls
-    return register
-
-
-def create_module(name, conf):
-    if name in MODULES:
-        return MODULES[name](conf)
-    else:
-        raise ValueError('Module {} is not registered'.format(name))
+logger = logging.getLogger()
 
 
 def log_sum_exp(tensor, dim=0):
@@ -39,11 +22,10 @@ def sequence_mask(lens, max_len=None):
     batch_size = lens.size(0)
 
     if max_len is None:
-        max_len = lens.max().data[0]
+        max_len = lens.max().item()
 
     ranges = torch.arange(0, max_len).long()
     ranges = ranges.unsqueeze(0).expand(batch_size, max_len)
-    ranges = Variable(ranges)
 
     if lens.data.is_cuda:
         ranges = ranges.cuda()
@@ -54,209 +36,110 @@ def sequence_mask(lens, max_len=None):
     return mask
 
 
-@register_module('linear')
+def log_sum_exp_(x, dim=None):
+    """
+    Sum probabilities in the log-space.
+    """
+    xmax, _ = x.max(dim=dim, keepdim=True)
+    xmax_, _ = x.max(dim=dim)
+    # return xmax_
+    return xmax_ + torch.log(torch.exp(x - xmax).sum(dim=dim))
+
+
+def sequence_mask_(batch_len, max_len=None):
+    if not max_len:
+        max_len = np.max(batch_len)
+
+    mask = np.zeros((len(batch_len), max_len))
+    for i in range(len(batch_len)):
+        mask[i, range(batch_len[i])] = 1
+
+    return mask
+
+
+def get_mask(batch_len, max_len=None):
+    if not max_len:
+        max_len = torch.max(batch_len)
+
+    mask = torch.zeros((len(batch_len), max_len.item()))
+    if batch_len.is_cuda:
+        mask = mask.cuda()
+    for i in range(len(batch_len)):
+        mask[i, :batch_len.data[i]] = 1
+
+    return mask
+
+
 class Linear(nn.Linear):
-
-    def __init__(self, conf):
-        assert hasattr(conf, 'in_features')
-        assert hasattr(conf, 'out_features')
-
-        super(Linear, self).__init__(
-            conf.in_features,
-            conf.out_features,
-            bias=getattr(conf, 'bias', True)
-        )
-        self.in_features = conf.in_features
-        self.out_features = conf.out_features
-        self.initialize()
-
-    def initialize(self):
-        I.orthogonal(self.weight.data)
-
-    def zero(self):
-        self.weight.data.fill_(0.0)
-        self.bias.data.fill_(0.0)
+    def __init__(self,
+                 in_features: int,
+                 out_features: int,
+                 bias: bool = True):
+        super(Linear, self).__init__(in_features, out_features, bias=bias)
+        I.orthogonal_(self.weight)
 
 
-class LinearProj(nn.Module):
-    def __init__(self, conf):
-        super(LinearProj, self).__init__()
+class Linears(nn.Module):
+    def __init__(self,
+                 in_features: int,
+                 out_features: int,
+                 hiddens: list,
+                 bias: bool = True,
+                 activation: str = 'tanh'):
+        super(Linears, self).__init__()
+        assert len(hiddens) > 0
 
-        # model parameters
-        self.input_dim = conf.input_dim
-        self.hidden_dim = conf.hidden_dim
-        self.label_size = conf.label_size
+        self.in_features = in_features
+        self.out_features = self.output_size = out_features
 
-        self.tanh_linear = nn.Linear(self.input_dim, self.hidden_dim)
-        self.linear = nn.Linear(self.hidden_dim, self.label_size)
+        in_dims = [in_features] + hiddens[:-1]
+        self.linears = nn.ModuleList([Linear(in_dim, out_dim, bias=bias)
+                                      for in_dim, out_dim
+                                      in zip(in_dims, hiddens)])
+        self.output_linear = Linear(hiddens[-1], out_features, bias=bias)
+        self.activation = getattr(F, activation)
 
-        self.init_params()
-
-    def init_params(self):
-        for p in self.parameters():
-            if p.dim() == 1:
-                p.data.zero_()
-            else:
-                I.xavier_uniform(p.data)
-
-    def forward(self, input):
-        tanh_out = F.tanh(self.tanh_linear(input))
-        linear_out = self.linear(tanh_out)
-        outputs = linear_out
-        return outputs
+    def forward(self, inputs):
+        linear_outputs = inputs
+        for linear in self.linears:
+            linear_outputs = linear.forward(linear_outputs)
+            linear_outputs = self.activation(linear_outputs)
+        return self.output_linear.forward(linear_outputs)
 
 
-@register_module('highway')
 class Highway(nn.Module):
-    def __init__(self, conf):
-        assert hasattr(conf, 'num_layers')
-        assert hasattr(conf, 'size')
-
+    def __init__(self,
+                 size: int,
+                 layer_num: int = 1,
+                 activation: str = 'relu'):
         super(Highway, self).__init__()
-        self.size = size = conf.size
-        self.num_layers = num_layers = conf.num_layers
-        self.f = getattr(F, getattr(conf, 'activation', 'relu'))
-        self.nonlinear = nn.ModuleList([
-            Linear(Config({'in_features': size, 'out_features': size}))
-            for _ in range(num_layers)])
-        # self.linear = nn.ModuleList([
-        #     Linear(Config({'in_features': size, 'out_features': size}))
-        #     for _ in range(num_layers)])
-        self.gate = nn.ModuleList([
-            Linear(Config({'in_features': size, 'out_features': size}))
-            for _ in range(num_layers)])
+        self.size = self.output_size = size
+        self.layer_num = layer_num
+        self.activation = getattr(F, activation)
+        self.non_linear = nn.ModuleList([Linear(size, size)
+                                         for _ in range(layer_num)])
+        self.gate = nn.ModuleList([Linear(size, size)
+                                   for _ in range(layer_num)])
 
-    def forward(self, x):
-        """
-        :param x: tensor with shape of [batch_size, size]
-        :return: tensor with shape of [batch_size, size]
-        See: https://github.com/kefirski/pytorch_Highway/blob/master/highway/highway.py
-        """
-
-        for layer in range(self.num_layers):
-            gate = F.sigmoid(self.gate[layer](x))
-
-            nonlinear = self.f(self.nonlinear[layer](x))
-
-            # Remove the affine transformation
-            # linear = self.linear[layer](x)
-            # x = gate * nonlinear + (1 - gate) * linear
-
-            x = gate * nonlinear + (1 - gate) * x
-
-        return x
+    def forward(self, inputs):
+        for layer in range(self.layer_num):
+            gate = F.sigmoid(self.gate[layer](inputs))
+            non_linear = self.activation(self.non_linear[layer](inputs))
+            inputs = gate * non_linear + (1 - gate) * inputs
+        return inputs
 
 
-@register_module('embedding')
-class Embedding(nn.Embedding):
-    def __init__(self, conf):
-        assert hasattr(conf, 'num_embeddings'), 'num_embedding is required'
-        assert hasattr(conf, 'embedding_dim'), 'embedding_dim is required'
-
-        self.num_embeddings = num_embeddings = getattr(conf, 'num_embeddings')
-        self.embedding_dim = embedding_dim = getattr(conf, 'embedding_dim')
-        self.padding_idx = padding_idx = getattr(conf, 'padding_idx', None)
-        self.max_norm = max_norm = getattr(conf, 'max_norm', None)
-        self.norm_type = norm_type = getattr(conf, 'norm_type', 2)
-        self.scale_grad_by_freq = scale_grad_by_freq = getattr(
-            conf, 'scale_grad_by_freq', False)
-        self.sparse = sparse = getattr(conf, 'sparse', False)
-        self.allow_gpu = allow_gpu = getattr(conf, 'allow_gpu', False)
-        self.trainable = trainable = getattr(conf, 'trainable', False)
-        self.padding = padding = getattr(conf, 'padding', 0)
-        self.file = file = getattr(conf, 'file', None)
-        self.stats = stats = getattr(conf, 'stats', False)
-        self.vocab = vocab = getattr(conf, 'vocab', None)
-        self.ignore_case = getattr(conf, 'ignore_case', True)
-
-        super(Embedding, self).__init__(num_embeddings + padding,
-                                        embedding_dim,
-                                        padding_idx,
-                                        max_norm,
-                                        norm_type,
-                                        scale_grad_by_freq,
-                                        sparse)
-        self.gpu = False
-        self.output_size = embedding_dim
-        if not trainable:
-            self.weight.requires_grad = False
-        if file and vocab:
-            self.load(file, vocab, stats=stats)
-        else:
-            self.initialize()
-
-    def initialize(self):
-        I.xavier_normal(self.weight.data)
-
-    # def cuda(self, device=None):
-    #     self.gpu = True
-    #     if self.allow_gpu:
-    #         return super(Embedding, self).cuda(device=None)
-    #
-    # def cpu(self):
-    #     self.gpu = False
-    #     return super(Embedding, self).cpu()
-
-    def save(self, path, vocab, stats=False):
-        """Save embedding to file.
-
-        :param path: Path to the embedding file.
-        :param vocab: Token vocab.
-        :param stats: Write stats line (default=False).
-        """
-        embeds = self.weight.data.cpu().numpy()
-        with open(path, 'w', encoding='utf-8') as w:
-            if stats:
-                embed_num, embed_dim = self.weight.data.size()
-                w.write('{} {}\n'.format(embed_num, embed_dim))
-            for token, idx in vocab.items():
-                embed = ' '.join(map(lambda x: str(x), embeds[idx]))
-                w.write('{} {}\n'.format(token, embed))
-
-    def load(self, path, vocab, stats=False):
-        logger.info('Loading embedding from {}'.format(path))
-        with open(path, 'r', encoding='utf-8') as r:
-            if stats:
-                r.readline()
-            for line_idx, line in enumerate(r):
-                try:
-                    segs = line.rstrip().split(' ')
-                    # if len(segs) != self.embedding_dim + 1:
-                    #     continue
-                    token = segs[0]
-                    if self.ignore_case:
-                        token = token.lower()
-                    if token in vocab:
-                        vector = self.weight.data.new(
-                            [float(v) for v in segs[1:]])
-                        self.weight.data[vocab[token]] = vector
-                except UnicodeDecodeError as e:
-                    traceback.print_exc()
-                except ValueError as e:
-                    traceback.print_exc()
-                    print('line {}'.format(line_idx), line)
-                except RuntimeError as e:
-                    traceback.print_exc()
-                    print('line {}'.format(line_idx), line)
-
-
-@register_module('lstm')
 class LSTM(nn.LSTM):
-    def __init__(self, conf):
-        assert hasattr(conf, 'input_size'), 'input_size is required'
-        assert hasattr(conf, 'hidden_size'), 'hidden_size is required'
-
-        self.input_size = input_size = getattr(conf, 'input_size')
-        self.hidden_size = hidden_size = getattr(conf, 'hidden_size')
-        self.num_layers = num_layers = getattr(conf, 'num_layers', 1)
-        self.bias = bias = getattr(conf, 'bias', True)
-        self.batch_first = batch_first = getattr(conf, 'batch_first', False)
-        self.dropout = dropout = getattr(conf, 'dropout', 0)
-        self.bidirectional = bidirectional = getattr(conf, 'bidirectional',
-                                                     False)
-        self.forget_bias = forget_bias = getattr(conf, 'forget_bias', 0)
-        self.output_size = hidden_size * (2 if bidirectional else 1)
-
+    def __init__(self,
+                 input_size: int,
+                 hidden_size: int,
+                 num_layers: int = 1,
+                 bias: bool = True,
+                 batch_first: bool = False,
+                 dropout: float = 0,
+                 bidirectional: bool = False,
+                 forget_bias: float = 0
+                 ):
         super(LSTM, self).__init__(input_size=input_size,
                                    hidden_size=hidden_size,
                                    num_layers=num_layers,
@@ -264,57 +147,32 @@ class LSTM(nn.LSTM):
                                    batch_first=batch_first,
                                    dropout=dropout,
                                    bidirectional=bidirectional)
-
-        self.initialize()
+        self.forget_bias = forget_bias
 
     def initialize(self):
         for n, p in self.named_parameters():
             if 'weight' in n:
-                I.orthogonal(p)
+                I.orthogonal_(p)
             elif 'bias' in n:
                 bias_size = p.size(0)
-                p.data[bias_size // 4:bias_size // 2].fill_(self.forget_bias)
-
-    def repack_init_state(self):
-        self.init_hidden = (
-            Variable(self.init_hidden[0].data, requires_grad=True),
-            Variable(self.init_hidden[1].data, requires_grad=True)
-        )
+                p[bias_size // 4:bias_size // 2].fill_(self.forget_bias)
 
 
-@register_module('char_cnn')
 class CharCNN(nn.Module):
 
-    def __init__(self, conf):
-        assert hasattr(conf, 'vocab_size')
-        assert hasattr(conf, 'dimension')
-        assert hasattr(conf, 'filters')
-
+    def __init__(self, dimension, vocab_size, filters):
         super(CharCNN, self).__init__()
-
-        vocab_size = getattr(conf, 'vocab_size')
-        dimension = getattr(conf, 'dimension')
-        filters = getattr(conf, 'filters')
-        padding = getattr(conf, 'padding', 2)
-
         self.output_size = sum([x[1] for x in filters])
-        self.embedding = Embedding(Config({
-            'num_embeddings': vocab_size,
-            'embedding_dim': dimension,
-            'padding_idx': 0,
-            'sparse': True,
-            'allow_gpu': True,
-            'padding': padding
-        }))
+        self.embedding = nn.Embedding(vocab_size,
+                                      dimension,
+                                      padding_idx=0,
+                                      sparse=True)
         self.convs = nn.ModuleList([nn.Conv2d(1, x[1], (x[0], dimension))
                                     for x in filters])
 
-    def forward(self, inputs, lens=None):
-        # batch_size, seq_len = inputs.size()
+    def forward(self, inputs):
         inputs_embed = self.embedding.forward(inputs)
-        # input channel
         inputs_embed = inputs_embed.unsqueeze(1)
-        # sequeeze output channel
         conv_outputs = [F.relu(conv.forward(inputs_embed)).squeeze(3)
                         for conv in self.convs]
         max_pool_outputs = [F.max_pool1d(i, i.size(2)).squeeze(2)
@@ -323,15 +181,104 @@ class CharCNN(nn.Module):
         return outputs
 
 
-@register_module('crf')
-class CRF(nn.Module):
-    def __init__(self, conf):
-        assert hasattr(conf, 'label_vocab')
 
+
+
+class CRFLoss(nn.Module):
+
+    def __init__(self, label_num):
         super(CRF, self).__init__()
 
-        self.label_vocab = label_vocab = getattr(conf, 'label_vocab')
-        self.label_size = len(label_vocab) + 2
+        self.label_num = label_num
+        self.start = label_num - 2
+        self.end = label_num - 1
+        self.transitions = nn.Parameter(torch.rand(label_num, label_num))
+        self.transitions.data[self.start, :] = -100.0
+        self.transitions.data[:, self.end] = -100.0
+
+    def forward(self, inputs, labels, lens, batch_mask=None):
+        batch_size, seq_len, _ = inputs.size()
+
+        inputs[:, :, -2] = -100.0
+        inputs[:, :, -1] = -100.0
+
+        start_state = inputs.new_full((batch_size, 1, self.label_num), -100.0)
+        start_state[:, :, self.label_num - 2] = 0
+        end_state = inputs.new_zeros(batch_size, 1, self.label_num)
+
+        inputs_padded = torch.cat([start_state, inputs, end_state], dim=1)
+        inputs_padded[range(len(lens)), lens + 1, :] = -100.0
+        inputs_padded[range(len(lens)), lens + 1,
+                      [self.label_num - 1] * len(lens)] = 0
+
+        # Compute path score
+        inputs_padded = inputs_padded.permute(1, 0, 2)
+        paths_scores = inputs.new_zeros((seq_len + 1, batch_size, self.label_num))
+        paths_indices = lens.new_zeros((seq_len + 1, batch_size, self.label_num))
+
+        previous = inputs_padded[0]
+        for i in range(1, len(inputs_padded)):
+            _previous = previous.unsqueeze(2)
+            _inputs_padded = inputs_padded[i].unsqueeze(1)
+            previous = log_sum_exp(
+                _previous + _inputs_padded + self.transitions, dim=1)
+            paths_scores[i - 1] = previous
+
+        # Compute real path score if reference is provided
+        paths_scores = paths_scores.permute(1, 0, 2)
+        batch_pred_path_scores = log_sum_exp(
+            paths_scores.gather(1, lens.view(-1, 1, 1).expand(
+                paths_scores.size(0), 1, paths_scores.size(2))).squeeze(1),
+            dim=1)
+        if batch_mask is not None:
+            batch_pred_path_scores = batch_pred_path_scores * batch_mask
+        pred_paths_scores = batch_pred_path_scores.sum()
+
+        real_path_mask = get_mask(lens)
+
+        real_path_score = inputs.gather(2, labels.unsqueeze(2)).squeeze(2)
+        batch_real_path_score = torch.sum(real_path_score * real_path_mask, dim=1)
+        if batch_mask is not None:
+            batch_real_path_score = batch_real_path_score * batch_mask
+        real_path_score = torch.sum(batch_real_path_score)
+
+        # Score from transitions
+        start_tag = labels.new_full((batch_size, 1))
+        end_tag = labels.new_zeros((batch_size, 1))
+        padded_tags_ids = torch.cat([start_tag, labels, end_tag], dim=1)
+
+        # Set end sentence state based on the sentence length
+        padded_tags_ids[range(len(seq_len)), lens + 1] = self.label_num - 1
+
+        # Mask out padding in batch
+        transition_score_mask = get_mask(lens + 1)
+
+        real_transition_score = self.transitions[
+            padded_tags_ids[:, range(seq_len + 1)],
+            padded_tags_ids[:, range(1, seq_len + 2)]
+        ]
+
+        batch_real_transition_score = torch.sum(
+            real_transition_score * transition_score_mask, dim=1)
+        if batch_mask is not None:
+            batch_real_transition_score = batch_real_transition_score * batch_mask
+        real_path_score += torch.sum(batch_real_transition_score)
+
+        loss = pred_paths_scores - real_path_score
+
+        return loss
+
+    def predict(self, inputs, lens):
+        pass
+
+
+class CRF(nn.Module):
+    def __init__(self, label_size):
+        super(CRF, self).__init__()
+
+        # self.label_vocab = label_vocab
+        # self.label_size = len(label_vocab) + 2
+        self.label_size = label_size
         self.start = self.label_size - 2
         self.end = self.label_size - 1
         transition = torch.randn(self.label_size, self.label_size)
@@ -339,25 +286,24 @@ class CRF(nn.Module):
         self.initialize()
 
     def initialize(self):
-        self.transition.data[:, self.end] = -100.0
-        self.transition.data[self.start, :] = -100.0
+        self.transition.data[:, self.end] = -1000.0
+        self.transition.data[self.start, :] = -1000.0
 
-    def pad_logits(self, logits, lens):
-        lens = lens.data
+    def pad_logits(self, logits):
         batch_size, seq_len, label_num = logits.size()
-        pads = Variable(logits.data.new(batch_size, seq_len, 2).fill_(-100.0),
-                        requires_grad=False)
+        pads = logits.new_full((batch_size, seq_len, 2), -1000.0,
+                               requires_grad=False)
         logits = torch.cat([logits, pads], dim=2)
         return logits
 
     def calc_binary_score(self, labels, lens):
         batch_size, seq_len = labels.size()
 
-        labels_ext = Variable(labels.data.new(batch_size, seq_len + 2))
+        labels_ext = labels.new_empty((batch_size, seq_len + 2))
         labels_ext[:, 0] = self.start
         labels_ext[:, 1:-1] = labels
         mask = sequence_mask(lens + 1, max_len=(seq_len + 2)).long()
-        pad_stop = Variable(labels.data.new(1).fill_(self.end))
+        pad_stop = labels.new_full((1,), self.end, requires_grad=False)
         pad_stop = pad_stop.unsqueeze(-1).expand(batch_size, seq_len + 2)
         labels_ext = (1 - mask) * pad_stop + mask * labels_ext
         labels = labels_ext
@@ -393,9 +339,8 @@ class CRF(nn.Module):
 
     def calc_norm_score(self, logits, lens):
         batch_size, seq_len, feat_dim = logits.size()
-        alpha = logits.data.new(batch_size, self.label_size).fill_(-10000.0)
+        alpha = logits.new_full((batch_size, self.label_size), -1000.0)
         alpha[:, self.start] = 0
-        alpha = Variable(alpha)
         lens_ = lens.clone()
 
         logits_t = logits.transpose(1, 0)
@@ -424,9 +369,8 @@ class CRF(nn.Module):
             lens: [batch_size] LongTensor
         """
         batch_size, seq_len, n_labels = logits.size()
-        vit = logits.data.new(batch_size, self.label_size).fill_(-10000)
+        vit = logits.new_full((batch_size, self.label_size), -1000.0)
         vit[:, self.start] = 0
-        vit = Variable(vit)
         c_lens = lens.clone()
 
         logits_t = logits.transpose(1, 0)
@@ -468,10 +412,6 @@ class CRF(nn.Module):
 
 
 class Model(nn.Module):
-    """Override the cuda function.
-    Used for top-level modules containing other modules.
-    It only works for modules without direct parameters."""
-
     def __init__(self):
         super(Model, self).__init__()
         self.gpu = False
@@ -489,13 +429,11 @@ class Model(nn.Module):
         return self
 
 
-@register_module('lstm_crf')
 class LstmCrf(Model):
     def __init__(self,
                  token_vocab,
                  label_vocab,
                  char_vocab,
-
                  word_embedding,
                  char_embedding,
                  crf,
@@ -504,7 +442,6 @@ class LstmCrf(Model):
                  univ_fc_layer=None,
                  spec_fc_layer=None,
                  output_layer=None,
-
                  embed_dropout_prob=0,
                  lstm_dropout_prob=0,
                  linear_dropout_prob=0,
@@ -540,27 +477,16 @@ class LstmCrf(Model):
         self.linear_dropout = nn.Dropout(p=linear_dropout_prob)
         self.label_size = len(label_vocab)
         if spec_fc_layer:
-            self.spec_gate = Linear(Config({
-                'in_features': spec_fc_layer.in_features,
-                'out_features': spec_fc_layer.out_features
-            }))
+            self.spec_gate = Linear(spec_fc_layer.in_features,
+                                    spec_fc_layer.out_features)
 
     def forward_model(self, inputs, lens, chars=None, char_lens=None):
-        """
-        From input to linear layer.
-
-        :param inputs:
-        :param lens:
-        :param chars:
-        :param char_lens:
-        :return:
-        """
         batch_size, seq_len = inputs.size()
 
         # Word embedding
         inputs_embed = self.word_embedding.forward(inputs)
-        if self.gpu:
-            inputs_embed = inputs_embed.cuda()
+        # if self.gpu:
+        #     inputs_embed = inputs_embed.cuda()
 
         # Character embedding
         if self.use_char_embedding:
@@ -573,7 +499,7 @@ class LstmCrf(Model):
         inputs_embed = self.embed_dropout.forward(inputs_embed)
 
         # LSTM layer
-        inputs_packed = R.pack_padded_sequence(inputs_embed, lens.data.tolist(),
+        inputs_packed = R.pack_padded_sequence(inputs_embed, lens.tolist(),
                                                batch_first=True)
         lstm_out, _ = self.lstm(inputs_packed)
         lstm_out, _ = R.pad_packed_sequence(lstm_out, batch_first=True)
@@ -590,22 +516,17 @@ class LstmCrf(Model):
         else:
             outputs = univ_feats
         outputs = outputs.view(batch_size, seq_len, self.label_size)
-        # outputs = self.linear_dropout.forward(outputs)
 
         return outputs
 
     def predict(self, inputs, labels, lens, chars=None, char_lens=None):
         self.eval()
-        # for module in self.children():
-        #     module.eval()
 
         loglik, logits = self.loglik(inputs, labels, lens, chars, char_lens)
         loss = -loglik.mean()
         scores, preds = self.crf.viterbi_decode(logits, lens)
 
         self.train()
-        # for module in self.children():
-        #     module.train()
         return preds, loss
 
     def loglik(self, inputs, labels, lens, chars=None, char_lens=None):
