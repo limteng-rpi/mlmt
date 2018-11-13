@@ -78,6 +78,34 @@ class Linear(nn.Linear):
         self.bias.data.fill_(0.0)
 
 
+class LinearProj(nn.Module):
+    def __init__(self, conf):
+        super(LinearProj, self).__init__()
+
+        # model parameters
+        self.input_dim = conf.input_dim
+        self.hidden_dim = conf.hidden_dim
+        self.label_size = conf.label_size
+
+        self.tanh_linear = nn.Linear(self.input_dim, self.hidden_dim)
+        self.linear = nn.Linear(self.hidden_dim, self.label_size)
+
+        self.init_params()
+
+    def init_params(self):
+        for p in self.parameters():
+            if p.dim() == 1:
+                p.data.zero_()
+            else:
+                I.xavier_uniform(p.data)
+
+    def forward(self, input):
+        tanh_out = F.tanh(self.tanh_linear(input))
+        linear_out = self.linear(tanh_out)
+        outputs = linear_out
+        return outputs
+
+
 @register_module('highway')
 class Highway(nn.Module):
     def __init__(self, conf):

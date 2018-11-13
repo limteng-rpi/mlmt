@@ -9,7 +9,7 @@ from torch import optim
 from torch.nn.utils import clip_grad_norm
 
 import constant as C
-from model import Linear, LSTM, CRF, CharCNN, Highway, LstmCrf, Embedding
+from model import Linear, LSTM, CRF, CharCNN, Highway, LstmCrf, Embedding, LinearProj
 from argparse import ArgumentParser
 from util import get_logger, evaluate, Config
 from data import (
@@ -88,9 +88,9 @@ logger.info('----------')
 
 # Parser for CoNLL format file
 conll_parser = ConllParser(Config({
-    'separator': '\t',
+    'separator': ' ',
     'token_col': 0,
-    'label_col': 1,
+    'label_col': 2,
     'skip_comment': True,
 }))
 
@@ -174,23 +174,29 @@ char_cnn = CharCNN(Config({
     'filters': charcnn_filters
 }))
 char_highway = Highway(Config({
-    'num_layers': 2,
+    'num_layers': 1,
     'size': char_cnn.output_size,
     'activation': 'selu'
 }))
 lstm = LSTM(Config({
     'input_size': word_embed.output_size + char_cnn.output_size,
     'hidden_size': args.lstm_hidden_size,
-    'forget_bias': 1.0,
+    # 'forget_bias': 1.0,
     'batch_first': True,
     'bidirectional': True
 }))
 crf = CRF(Config({
     'label_vocab': label_vocab
 }))
-output_linear = Linear(Config({
-    'in_features': lstm.output_size,
-    'out_features': len(label_vocab)
+# output_linear = Linear(Config({
+#     'in_features': lstm.output_size,
+#     'out_features': len(label_vocab)
+# }))
+
+output_linear = LinearProj(Config({
+    'input_dim': lstm.output_size,
+    'hidden_dim': lstm.output_size // 2,
+    'label_size': len(label_vocab)
 }))
 
 # LSTM CRF Model
@@ -212,6 +218,8 @@ lstm_crf = LstmCrf(
 if use_gpu:
     torch.cuda.set_device(args.gpu_idx)
     lstm_crf.cuda()
+
+print(lstm_crf)
 
 # Task
 optimizer = optim.SGD(filter(lambda p: p.requires_grad, lstm_crf.parameters()),
