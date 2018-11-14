@@ -1,4 +1,8 @@
-I made modifications to a few functions in `data.py` and `model.py` when implementing `train_single.py`, `eval_single.py`, and `train_multi.py`. Not sure if `pipeline.py` was affected. I'll test it and finish the todo list as soon as possible.
+I'm re-organizing the code and made the following changes:
+1. Improve pre-trained word embedding loading.
+2. Use PyTorch's built-in Dataset and DataLoader APIs
+
+Old files were moved to `old/` and will be removed after the re-organization is done.
 
 ## TODOs
 
@@ -27,7 +31,7 @@ Train a new model:
 ```
 python train_single.py --train <PATH> --dev <PATH>
   --test <PATH> --log <LOG_DIRECTORY> --model <MODEL_DIRECTORY>
-  --max_epoch 50 --embedding <PATH> --embed_skip_first
+  --max_epoch 50 --word_embed <PATH>
   --word_embed_dim 100 --char_embed_dim 50
 ```
 
@@ -51,7 +55,7 @@ python train_multi.py --train_tgt <PATH> --dev_tgt <PATH>
   --test_ct <PATH> --train_clct <PATH> --dev_clct <PATH>
   --test_clct <PATH> --log <LOG_DIRECTORY>
   --model <MODEL_DIRECTORY> --max_epoch 50
-  --embedding1 <PATH> --embedding2 <PATH> --word_embed_dim 50
+  --word_embed_1 <PATH> --word_embed_2 <PATH> --word_embed_dim 50
 ```
 
 ## Configuration
