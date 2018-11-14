@@ -32,14 +32,14 @@ def evaluate(results, idx_token, idx_label, writer=None):
     outputs = []
     for preds_b, golds_b, len_b, tokens_b in results:
         for preds_s, golds_s, len_s, tokens_s in zip(preds_b, golds_b, len_b, tokens_b):
-            l = int(len_s.data[0])
+            l = int(len_s.item())
             preds_s = preds_s.data.tolist()[:l]
             golds_s = golds_s.data.tolist()[:l]
             tokens_s = tokens_s.data.tolist()[:l]
             for p, g, t in zip(preds_s, golds_s, tokens_s):
                 token = idx_token.get(t, C.UNKNOWN_TOKEN)
                 outputs.append('{} {} {}'.format(
-                    token, idx_label[g], idx_label[p]))
+                    token, idx_label.get(g, 0), idx_label.get(p, 0)))
             outputs.append('')
     counts = conlleval.evaluate(outputs)
     overall, by_type = conlleval.metrics(counts)

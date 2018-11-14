@@ -633,10 +633,10 @@ try:
                 p['lr'] = lr
         logger.info('New learning rate: {}'.format(lr))
 
-        logger.info('Best score: {}'.format(best_dev_score))
-        logger.info('Model file: {}'.format(model_file))
-        if args.log:
-            logger.info('Log file: {}'.format(log_file))
+    logger.info('Best score: {}'.format(best_dev_score))
+    logger.info('Model file: {}'.format(model_file))
+    if args.log:
+        logger.info('Log file: {}'.format(log_file))
 
 except Exception:
     traceback.print_exc()

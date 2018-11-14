@@ -1,46 +1,47 @@
+import logging
 import os
 import time
 import traceback
+
+from torch.utils.data import DataLoader
+
 import constant as C
 
 import torch
 
-from model import Linear, LSTM, CRF, CharCNN, Highway, LstmCrf, Embedding
 from argparse import ArgumentParser
-from util import get_logger, evaluate, Config
-from data import (
-    SequenceDataset, ConllParser,
-    compute_metadata, count2vocab, numberize_datasets
-)
+from model import Linears, LSTM, CRF, CharCNN, Highway, LstmCrf
+from util import evaluate
+from data import ConllParser, SeqLabelDataset, SeqLabelProcessor
 
-timestamp = time.strftime('%Y%m%d_%H%M%S', time.gmtime())
+timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger()
 
 argparser = ArgumentParser()
 
 argparser.add_argument('--model', help='Path to the model file')
 argparser.add_argument('--file', help='Path to the file to evaluate')
 argparser.add_argument('--log', help='Path to the log dir')
-argparser.add_argument('--gpu', default=1, type=int, help='Use GPU')
-argparser.add_argument('--gpu_idx', default=0, type=int)
+argparser.add_argument('--gpu', action='store_true')
+argparser.add_argument('--device', default=0, type=int)
 
 args = argparser.parse_args()
+
+use_gpu = args.gpu and torch.cuda.is_available()
+if use_gpu:
+    torch.cuda.set_device(args.device)
 
 # Parameters
 model_file = args.model
 data_file = args.file
-assert model_file, 'Model file is required'
-assert data_file, 'Data file is required'
-
-use_gpu = (args.gpu == 1)
-
 
 log_writer = None
 if args.log:
     log_file = os.path.join(args.log, 'log.{}.txt'.format(timestamp))
     log_writer = open(log_file, 'a', encoding='utf-8')
-    logger = get_logger(__name__, log_file=log_file)
-else:
-    logger = get_logger(__name__)
+    logger.addHandler(logging.FileHandler(log_file, encoding='utf-8'))
 
 # Load saved model
 logger.info('Loading saved model from {}'.format(model_file))
@@ -54,95 +55,67 @@ charcnn_filters = [[int(f.split(',')[0]), int(f.split(',')[1])]
 
 # Resume model
 logger.info('Resuming the model')
-word_embed = Embedding(Config({
-    'num_embeddings': len(token_vocab),
-    'embedding_dim': train_args['word_embed_dim'],
-    'padding': C.EMBED_START_IDX,
-    'padding_idx': 0,
-    'sparse': True,
-    'trainable': True,
-    'stats': train_args['embed_skip_first'],
-    'vocab': token_vocab,
-    'ignore_case': train_args['word_ignore_case']
-}))
-char_cnn = CharCNN(Config({
-    'vocab_size': len(char_vocab),
-    'padding': C.CHAR_EMBED_START_IDX,
-    'dimension': train_args['char_embed_dim'],
-    'filters': charcnn_filters
-}))
-char_highway = Highway(Config({
-    'num_layers': 2,
-    'size': char_cnn.output_size,
-    'activation': 'selu'
-}))
-lstm = LSTM(Config({
-    'input_size': word_embed.output_size + char_cnn.output_size,
-    'hidden_size': train_args['lstm_hidden_size'],
-    'forget_bias': 1.0,
-    'batch_first': True,
-    'bidirectional': True
-}))
-crf = CRF(Config({
-    'label_vocab': label_vocab
-}))
-output_linear = Linear(Config({
-    'in_features': lstm.output_size,
-    'out_features': len(label_vocab)
-}))
-word_embed.load_state_dict(state['model']['word_embed'])
-char_cnn.load_state_dict(state['model']['char_cnn'])
-char_highway.load_state_dict(state['model']['char_highway'])
-lstm.load_state_dict(state['model']['lstm'])
-crf.load_state_dict(state['model']['crf'])
-output_linear.load_state_dict(state['model']['output_linear'])
+word_embed = torch.nn.Embedding(train_args['word_embed_size'],
+                                train_args['word_embed_dim'],
+                                sparse=True,
+                                padding_idx=C.PAD_INDEX)
+char_embed = CharCNN(len(char_vocab),
+                     train_args['char_embed_dim'],
+                     filters=charcnn_filters)
+char_hw = Highway(char_embed.output_size,
+                  layer_num=train_args['charhw_layer'],
+                  activation=train_args['charhw_func'])
+feat_dim = word_embed.embedding_dim + char_embed.output_size
+lstm = LSTM(feat_dim,
+            train_args['lstm_hidden_size'],
+            batch_first=True,
+            bidirectional=True,
+            forget_bias=train_args['lstm_forget_bias'])
+crf = CRF(label_size=len(label_vocab) + 2)
+linear = Linears(in_features=lstm.output_size,
+                 out_features=len(label_vocab),
+                 hiddens=[lstm.output_size // 2])
 lstm_crf = LstmCrf(
-    token_vocab=token_vocab,
-    label_vocab=label_vocab,
-    char_vocab=char_vocab,
+    token_vocab, label_vocab, char_vocab,
     word_embedding=word_embed,
-    char_embedding=char_cnn,
+    char_embedding=char_embed,
     crf=crf,
     lstm=lstm,
-    univ_fc_layer=output_linear,
+    univ_fc_layer=linear,
     embed_dropout_prob=train_args['embed_dropout'],
     lstm_dropout_prob=train_args['lstm_dropout'],
-    linear_dropout_prob=train_args['linear_dropout'],
-    char_highway=char_highway
+    char_highway=char_hw if train_args['use_highway'] else None
 )
+
+word_embed.load_state_dict(state['model']['word_embed'])
+char_embed.load_state_dict(state['model']['char_embed'])
+char_hw.load_state_dict(state['model']['char_hw'])
+lstm.load_state_dict(state['model']['lstm'])
+crf.load_state_dict(state['model']['crf'])
+linear.load_state_dict(state['model']['linear'])
 lstm_crf.load_state_dict(state['model']['lstm_crf'])
 
 if use_gpu:
-    torch.cuda.set_device(args.gpu_idx)
     lstm_crf.cuda()
-else:
-    lstm_crf.cpu()
 
 # Load dataset
 logger.info('Loading data')
-conll_parser = ConllParser(Config({
-    'separator': '\t',
-    'token_col': 0,
-    'label_col': 1,
-    'skip_comment': True,
-}))
-test_set = SequenceDataset(Config({
-    'path': data_file, 'parser': conll_parser
-}))
-numberize_datasets([(test_set, token_vocab, label_vocab, char_vocab)],
-                   token_ignore_case=train_args['word_ignore_case'],
-                   label_ignore_case=False,
-                   char_ignore_case=False)
-idx_token = {idx: token for token, idx in token_vocab.items()}
-idx_label = {idx: label for label, idx in label_vocab.items()}
-idx_token[C.UNKNOWN_TOKEN_INDEX] = C.UNKNOWN_TOKEN
+parser = ConllParser()
+test_set = SeqLabelDataset(data_file, parser=parser)
+test_set.numberize(token_vocab, label_vocab, char_vocab)
+idx_token = {v: k for k, v in token_vocab.items()}
+idx_label = {v: k for k, v in label_vocab.items()}
+processor = SeqLabelProcessor(gpu=use_gpu)
 
 try:
     results = []
     dataset_loss = []
-    for batch in test_set.get_dataset(gpu=use_gpu,
-                                      shuffle_inst=False,
-                                      batch_size=100):
+    for batch in DataLoader(
+            test_set,
+            batch_size=50,
+            shuffle=False,
+            collate_fn=processor.process
+    ):
         tokens, labels, chars, seq_lens, char_lens = batch
         pred, loss = lstm_crf.predict(
             tokens, labels, seq_lens, chars, char_lens)
@@ -150,7 +123,11 @@ try:
         dataset_loss.append(loss.data[0])
 
     dataset_loss = sum(dataset_loss) / len(dataset_loss)
-    fscore, prec, rec = evaluate(results, idx_token, idx_label, writer=log_writer)
+    fscore, prec, rec = evaluate(results, idx_token, idx_label,
+                                 writer=log_writer)
+    if args.log:
+        logger.info('Log file: {}'.format(log_file))
+        log_writer.close()
 except KeyboardInterrupt:
     traceback.print_exc()
     if log_writer:
