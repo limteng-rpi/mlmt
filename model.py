@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import torch
 import torch.nn as nn
 import torch.nn.init as I
@@ -5,8 +7,10 @@ import torch.nn.utils.rnn as R
 import torch.nn.functional as F
 import traceback
 
-import numpy as np
+import re
 import logging
+import numpy as np
+import constant as C
 
 logger = logging.getLogger()
 
@@ -68,6 +72,72 @@ def get_mask(batch_len, max_len=None):
         mask[i, :batch_len.data[i]] = 1
 
     return mask
+
+
+def load_embedding(path: str,
+                   dimension: int,
+                   vocab: dict = None,
+                   skip_first_line: bool = True,
+                   ):
+    logger.info('Scanning embedding file: {}'.format(path))
+
+    embed_vocab = set()
+    lower_mapping = {}  # lower case - original
+    digit_mapping = {}  # lower case + replace digit with 0 - original
+    digit_pattern = re.compile('\d')
+    with open(path, 'r', encoding='utf-8') as r:
+        if skip_first_line:
+            r.readline()
+        for line in r:
+            try:
+                token = line.split(' ')[0].strip()
+                if token:
+                    embed_vocab.add(token)
+                    token_lower = token.lower()
+                    token_digit = re.sub(digit_pattern, '0', token_lower)
+                    if token_lower not in lower_mapping:
+                        lower_mapping[token_lower] = token
+                    if token_digit not in digit_mapping:
+                        digit_mapping[token_digit] = token
+            except UnicodeDecodeError:
+                continue
+
+    token_mapping = defaultdict(list)  # embed token - vocab token
+    for token in vocab:
+        token_lower = token.lower()
+        token_digit = re.sub(digit_pattern, '0', token_lower)
+        if token in embed_vocab:
+            token_mapping[token].append(token)
+        elif token_lower in lower_mapping:
+            token_mapping[lower_mapping[token_lower]].append(token)
+        elif token_digit in digit_mapping:
+            token_mapping[digit_mapping[token_digit]].append(token)
+
+    logger.info('Loading embeddings')
+    weight = [[.0] * dimension for _ in range(len(vocab))]
+    with open(path, 'r', encoding='utf-8') as r:
+        if skip_first_line:
+            r.readline()
+        for line in r:
+            try:
+                segs = line.rstrip().split(' ')
+                token = segs[0]
+                if token in token_mapping:
+                    vec = [float(v) for v in segs[1:]]
+                    for t in token_mapping.get(token):
+                        weight[vocab[t]] = vec.copy()
+            except UnicodeDecodeError:
+                continue
+            except ValueError:
+                continue
+    embed = nn.Embedding(
+        len(vocab),
+        dimension,
+        padding_idx=C.PAD_INDEX,
+        sparse=True,
+        _weight=torch.FloatTensor(weight)
+    )
+    return embed
 
 
 class Linear(nn.Linear):
@@ -147,6 +217,7 @@ class LSTM(nn.LSTM):
                                    batch_first=batch_first,
                                    dropout=dropout,
                                    bidirectional=bidirectional)
+        self.output_size = hidden_size * 2 if bidirectional else hidden_size
         self.forget_bias = forget_bias
 
     def initialize(self):
@@ -160,14 +231,14 @@ class LSTM(nn.LSTM):
 
 class CharCNN(nn.Module):
 
-    def __init__(self, dimension, vocab_size, filters):
+    def __init__(self, embedding_num, embedding_dim, filters):
         super(CharCNN, self).__init__()
         self.output_size = sum([x[1] for x in filters])
-        self.embedding = nn.Embedding(vocab_size,
-                                      dimension,
+        self.embedding = nn.Embedding(embedding_num,
+                                      embedding_dim,
                                       padding_idx=0,
                                       sparse=True)
-        self.convs = nn.ModuleList([nn.Conv2d(1, x[1], (x[0], dimension))
+        self.convs = nn.ModuleList([nn.Conv2d(1, x[1], (x[0], embedding_dim))
                                     for x in filters])
 
     def forward(self, inputs):
@@ -276,8 +347,6 @@ class CRF(nn.Module):
     def __init__(self, label_size):
         super(CRF, self).__init__()
 
-        # self.label_vocab = label_vocab
-        # self.label_size = len(label_vocab) + 2
         self.label_size = label_size
         self.start = self.label_size - 2
         self.end = self.label_size - 1
@@ -286,11 +355,14 @@ class CRF(nn.Module):
         self.initialize()
 
     def initialize(self):
-        self.transition.data[:, self.end] = -1000.0
-        self.transition.data[self.start, :] = -1000.0
+        self.transition.data[:, self.end] = -100.0
+        self.transition.data[self.start, :] = -100.0
 
     def pad_logits(self, logits):
+        # lens = lens.data
         batch_size, seq_len, label_num = logits.size()
+        # pads = Variable(logits.data.new(batch_size, seq_len, 2).fill_(-1000.0),
+        #                 requires_grad=False)
         pads = logits.new_full((batch_size, seq_len, 2), -1000.0,
                                requires_grad=False)
         logits = torch.cat([logits, pads], dim=2)
@@ -299,10 +371,12 @@ class CRF(nn.Module):
     def calc_binary_score(self, labels, lens):
         batch_size, seq_len = labels.size()
 
+        # labels_ext = Variable(labels.data.new(batch_size, seq_len + 2))
         labels_ext = labels.new_empty((batch_size, seq_len + 2))
         labels_ext[:, 0] = self.start
         labels_ext[:, 1:-1] = labels
         mask = sequence_mask(lens + 1, max_len=(seq_len + 2)).long()
+        # pad_stop = Variable(labels.data.new(1).fill_(self.end))
         pad_stop = labels.new_full((1,), self.end, requires_grad=False)
         pad_stop = pad_stop.unsqueeze(-1).expand(batch_size, seq_len + 2)
         labels_ext = (1 - mask) * pad_stop + mask * labels_ext
@@ -339,8 +413,10 @@ class CRF(nn.Module):
 
     def calc_norm_score(self, logits, lens):
         batch_size, seq_len, feat_dim = logits.size()
-        alpha = logits.new_full((batch_size, self.label_size), -1000.0)
+        # alpha = logits.data.new(batch_size, self.label_size).fill_(-10000.0)
+        alpha = logits.new_full((batch_size, self.label_size), -100.0)
         alpha[:, self.start] = 0
+        # alpha = Variable(alpha)
         lens_ = lens.clone()
 
         logits_t = logits.transpose(1, 0)
@@ -369,8 +445,10 @@ class CRF(nn.Module):
             lens: [batch_size] LongTensor
         """
         batch_size, seq_len, n_labels = logits.size()
-        vit = logits.new_full((batch_size, self.label_size), -1000.0)
+        # vit = logits.data.new(batch_size, self.label_size).fill_(-10000)
+        vit = logits.new_full((batch_size, self.label_size), -100.0)
         vit[:, self.start] = 0
+        # vit = Variable(vit)
         c_lens = lens.clone()
 
         logits_t = logits.transpose(1, 0)
@@ -396,7 +474,7 @@ class CRF(nn.Module):
 
         pointers = torch.cat(pointers)
         scores, idx = vit.max(1)
-        idx = idx.squeeze(-1)
+        # idx = idx.squeeze(-1)
         paths = [idx.unsqueeze(1)]
         for argmax in reversed(pointers):
             idx_exp = idx.unsqueeze(-1)
@@ -409,7 +487,6 @@ class CRF(nn.Module):
         scores = scores.squeeze(-1)
 
         return scores, paths
-
 
 class Model(nn.Module):
     def __init__(self):
@@ -444,7 +521,6 @@ class LstmCrf(Model):
                  output_layer=None,
                  embed_dropout_prob=0,
                  lstm_dropout_prob=0,
-                 linear_dropout_prob=0,
                  use_char_embedding=True,
                  char_highway=None
                  ):
@@ -461,7 +537,7 @@ class LstmCrf(Model):
         self.word_embedding = word_embedding
         self.char_embedding = char_embedding
 
-        self.feat_dim = word_embedding.output_size
+        self.feat_dim = word_embedding.embedding_dim
         if use_char_embedding:
             self.feat_dim += char_embedding.output_size
 
@@ -474,7 +550,6 @@ class LstmCrf(Model):
         self.char_highway = char_highway
         self.lstm_dropout = nn.Dropout(p=lstm_dropout_prob)
         self.embed_dropout = nn.Dropout(p=embed_dropout_prob)
-        self.linear_dropout = nn.Dropout(p=linear_dropout_prob)
         self.label_size = len(label_vocab)
         if spec_fc_layer:
             self.spec_gate = Linear(spec_fc_layer.in_features,
@@ -485,12 +560,10 @@ class LstmCrf(Model):
 
         # Word embedding
         inputs_embed = self.word_embedding.forward(inputs)
-        # if self.gpu:
-        #     inputs_embed = inputs_embed.cuda()
 
         # Character embedding
         if self.use_char_embedding:
-            chars_embed = self.char_embedding.forward(chars, char_lens)
+            chars_embed = self.char_embedding.forward(chars)
             if self.char_highway:
                 chars_embed = self.char_highway.forward(chars_embed)
             chars_embed = chars_embed.view(batch_size, seq_len, -1)
@@ -531,7 +604,7 @@ class LstmCrf(Model):
 
     def loglik(self, inputs, labels, lens, chars=None, char_lens=None):
         logits = self.forward_model(inputs, lens, chars, char_lens)
-        logits = self.crf.pad_logits(logits, lens)
+        logits = self.crf.pad_logits(logits)
         norm_score = self.crf.calc_norm_score(logits, lens)
         gold_score = self.crf.calc_gold_score(logits, labels, lens)
         loglik = gold_score - norm_score
