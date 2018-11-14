@@ -11,7 +11,7 @@ Old files were moved to `old/` and will be removed once the re-organization is d
 
 ## Requirements
 * Python 3.5+
-* Pytorch 0.3.1
+* Pytorch 0.4.1 (old scripts use Pytorch 0.3.1)
 * tqdm (used to display training progress)
 
 ## Architecture
