@@ -2,7 +2,7 @@ I'm re-organizing the code and made the following changes:
 1. Improve pre-trained word embedding loading.
 2. Use PyTorch's built-in Dataset and DataLoader APIs
 
-Old files were moved to `old/` and will be removed after the re-organization is done.
+Old files were moved to `old/` and will be removed once the re-organization is done.
 
 ## TODOs
 
