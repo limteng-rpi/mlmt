@@ -175,8 +175,8 @@ for _, ds in datasets['clct'].items():
 token_vocab_1 = count2vocab(token_count_1, offset=len(C.TOKEN_PADS), pads=C.TOKEN_PADS)
 token_vocab_2 = count2vocab(token_count_2, offset=len(C.TOKEN_PADS), pads=C.TOKEN_PADS)
 char_vocab = count2vocab(char_count, offset=len(C.CHAR_PADS), pads=C.CHAR_PADS)
-label_vocab_1 = count2vocab(label_count_1, pads=[(C.PAD, C.PAD_INDEX)])
-label_vocab_2 = count2vocab(label_count_2, pads=[(C.PAD, C.PAD_INDEX)])
+label_vocab_1 = count2vocab(label_count_1, offset=1, pads=[(C.PAD, C.PAD_INDEX)])
+label_vocab_2 = count2vocab(label_count_2, offset=1, pads=[(C.PAD, C.PAD_INDEX)])
 
 idx_token_1 = {idx: token for token, idx in token_vocab_1.items()}
 idx_token_2 = {idx: token for token, idx in token_vocab_2.items()}
