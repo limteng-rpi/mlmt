@@ -5,21 +5,11 @@ import torch.nn as nn
 import torch.nn.init as I
 import torch.nn.utils.rnn as R
 import torch.nn.functional as F
-<<<<<<< HEAD
-import traceback
-
-import re
-import logging
-import numpy as np
-import constant as C
-
-=======
 
 import re
 import logging
 import constant as C
 
->>>>>>> master
 logger = logging.getLogger()
 
 
@@ -48,144 +38,6 @@ def sequence_mask(lens, max_len=None):
     return mask
 
 
-<<<<<<< HEAD
-def log_sum_exp_(x, dim=None):
-    """
-    Sum probabilities in the log-space.
-    """
-    xmax, _ = x.max(dim=dim, keepdim=True)
-    xmax_, _ = x.max(dim=dim)
-    # return xmax_
-    return xmax_ + torch.log(torch.exp(x - xmax).sum(dim=dim))
-
-
-def sequence_mask_(batch_len, max_len=None):
-    if not max_len:
-        max_len = np.max(batch_len)
-
-    mask = np.zeros((len(batch_len), max_len))
-    for i in range(len(batch_len)):
-        mask[i, range(batch_len[i])] = 1
-
-    return mask
-=======
-def load_embedding(path: str,
-                   dimension: int,
-                   vocab: dict = None,
-                   skip_first_line: bool = True,
-                   ):
-    logger.info('Scanning embedding file: {}'.format(path))
-
-    embed_vocab = set()
-    lower_mapping = {}  # lower case - original
-    digit_mapping = {}  # lower case + replace digit with 0 - original
-    digit_pattern = re.compile('\d')
-    with open(path, 'r', encoding='utf-8') as r:
-        if skip_first_line:
-            r.readline()
-        for line in r:
-            try:
-                token = line.split(' ')[0].strip()
-                if token:
-                    embed_vocab.add(token)
-                    token_lower = token.lower()
-                    token_digit = re.sub(digit_pattern, '0', token_lower)
-                    if token_lower not in lower_mapping:
-                        lower_mapping[token_lower] = token
-                    if token_digit not in digit_mapping:
-                        digit_mapping[token_digit] = token
-            except UnicodeDecodeError:
-                continue
-
-    token_mapping = defaultdict(list)  # embed token - vocab token
-    for token in vocab:
-        token_lower = token.lower()
-        token_digit = re.sub(digit_pattern, '0', token_lower)
-        if token in embed_vocab:
-            token_mapping[token].append(token)
-        elif token_lower in lower_mapping:
-            token_mapping[lower_mapping[token_lower]].append(token)
-        elif token_digit in digit_mapping:
-            token_mapping[digit_mapping[token_digit]].append(token)
-
-    logger.info('Loading embeddings')
-    weight = [[.0] * dimension for _ in range(len(vocab))]
-    with open(path, 'r', encoding='utf-8') as r:
-        if skip_first_line:
-            r.readline()
-        for line in r:
-            try:
-                segs = line.rstrip().split(' ')
-                token = segs[0]
-                if token in token_mapping:
-                    vec = [float(v) for v in segs[1:]]
-                    for t in token_mapping.get(token):
-                        weight[vocab[t]] = vec.copy()
-            except UnicodeDecodeError:
-                continue
-            except ValueError:
-                continue
-    embed = nn.Embedding(
-        len(vocab),
-        dimension,
-        padding_idx=C.PAD_INDEX,
-        sparse=True,
-        _weight=torch.FloatTensor(weight)
-    )
-    return embed
-
-
-class Linear(nn.Linear):
-    def __init__(self,
-                 in_features: int,
-                 out_features: int,
-                 bias: bool = True):
-        super(Linear, self).__init__(in_features, out_features, bias=bias)
-        I.orthogonal_(self.weight)
-
->>>>>>> master
-
-class Linears(nn.Module):
-    def __init__(self,
-                 in_features: int,
-                 out_features: int,
-                 hiddens: list,
-                 bias: bool = True,
-                 activation: str = 'tanh'):
-        super(Linears, self).__init__()
-        assert len(hiddens) > 0
-
-        self.in_features = in_features
-        self.out_features = self.output_size = out_features
-
-        in_dims = [in_features] + hiddens[:-1]
-        self.linears = nn.ModuleList([Linear(in_dim, out_dim, bias=bias)
-                                      for in_dim, out_dim
-                                      in zip(in_dims, hiddens)])
-        self.output_linear = Linear(hiddens[-1], out_features, bias=bias)
-        self.activation = getattr(F, activation)
-
-    def forward(self, inputs):
-        linear_outputs = inputs
-        for linear in self.linears:
-            linear_outputs = linear.forward(linear_outputs)
-            linear_outputs = self.activation(linear_outputs)
-        return self.output_linear.forward(linear_outputs)
-
-<<<<<<< HEAD
-def get_mask(batch_len, max_len=None):
-    if not max_len:
-        max_len = torch.max(batch_len)
-
-    mask = torch.zeros((len(batch_len), max_len.item()))
-    if batch_len.is_cuda:
-        mask = mask.cuda()
-    for i in range(len(batch_len)):
-        mask[i, :batch_len.data[i]] = 1
-
-    return mask
-
-
 def load_embedding(path: str,
                    dimension: int,
                    vocab: dict = None,
@@ -289,9 +141,6 @@ class Linears(nn.Module):
         return self.output_linear.forward(linear_outputs)
 
 
-=======
-
->>>>>>> master
 class Highway(nn.Module):
     def __init__(self,
                  size: int,
@@ -367,100 +216,6 @@ class CharCNN(nn.Module):
         return outputs
 
 
-<<<<<<< HEAD
-
-
-
-class CRFLoss(nn.Module):
-
-    def __init__(self, label_num):
-        super(CRF, self).__init__()
-
-        self.label_num = label_num
-        self.start = label_num - 2
-        self.end = label_num - 1
-        self.transitions = nn.Parameter(torch.rand(label_num, label_num))
-        self.transitions.data[self.start, :] = -100.0
-        self.transitions.data[:, self.end] = -100.0
-
-    def forward(self, inputs, labels, lens, batch_mask=None):
-        batch_size, seq_len, _ = inputs.size()
-
-        inputs[:, :, -2] = -100.0
-        inputs[:, :, -1] = -100.0
-
-        start_state = inputs.new_full((batch_size, 1, self.label_num), -100.0)
-        start_state[:, :, self.label_num - 2] = 0
-        end_state = inputs.new_zeros(batch_size, 1, self.label_num)
-
-        inputs_padded = torch.cat([start_state, inputs, end_state], dim=1)
-        inputs_padded[range(len(lens)), lens + 1, :] = -100.0
-        inputs_padded[range(len(lens)), lens + 1,
-                      [self.label_num - 1] * len(lens)] = 0
-
-        # Compute path score
-        inputs_padded = inputs_padded.permute(1, 0, 2)
-        paths_scores = inputs.new_zeros((seq_len + 1, batch_size, self.label_num))
-        paths_indices = lens.new_zeros((seq_len + 1, batch_size, self.label_num))
-
-        previous = inputs_padded[0]
-        for i in range(1, len(inputs_padded)):
-            _previous = previous.unsqueeze(2)
-            _inputs_padded = inputs_padded[i].unsqueeze(1)
-            previous = log_sum_exp(
-                _previous + _inputs_padded + self.transitions, dim=1)
-            paths_scores[i - 1] = previous
-
-        # Compute real path score if reference is provided
-        paths_scores = paths_scores.permute(1, 0, 2)
-        batch_pred_path_scores = log_sum_exp(
-            paths_scores.gather(1, lens.view(-1, 1, 1).expand(
-                paths_scores.size(0), 1, paths_scores.size(2))).squeeze(1),
-            dim=1)
-        if batch_mask is not None:
-            batch_pred_path_scores = batch_pred_path_scores * batch_mask
-        pred_paths_scores = batch_pred_path_scores.sum()
-
-        real_path_mask = get_mask(lens)
-
-        real_path_score = inputs.gather(2, labels.unsqueeze(2)).squeeze(2)
-        batch_real_path_score = torch.sum(real_path_score * real_path_mask, dim=1)
-        if batch_mask is not None:
-            batch_real_path_score = batch_real_path_score * batch_mask
-        real_path_score = torch.sum(batch_real_path_score)
-
-        # Score from transitions
-        start_tag = labels.new_full((batch_size, 1))
-        end_tag = labels.new_zeros((batch_size, 1))
-        padded_tags_ids = torch.cat([start_tag, labels, end_tag], dim=1)
-
-        # Set end sentence state based on the sentence length
-        padded_tags_ids[range(len(seq_len)), lens + 1] = self.label_num - 1
-
-        # Mask out padding in batch
-        transition_score_mask = get_mask(lens + 1)
-
-        real_transition_score = self.transitions[
-            padded_tags_ids[:, range(seq_len + 1)],
-            padded_tags_ids[:, range(1, seq_len + 2)]
-        ]
-
-        batch_real_transition_score = torch.sum(
-            real_transition_score * transition_score_mask, dim=1)
-        if batch_mask is not None:
-            batch_real_transition_score = batch_real_transition_score * batch_mask
-        real_path_score += torch.sum(batch_real_transition_score)
-
-        loss = pred_paths_scores - real_path_score
-
-        return loss
-
-    def predict(self, inputs, lens):
-        pass
-
-
-=======
->>>>>>> master
 class CRF(nn.Module):
     def __init__(self, label_size):
         super(CRF, self).__init__()
@@ -605,6 +360,7 @@ class CRF(nn.Module):
         scores = scores.squeeze(-1)
 
         return scores, paths
+
 
 class Model(nn.Module):
     def __init__(self):

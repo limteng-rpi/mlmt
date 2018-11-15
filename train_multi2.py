@@ -1,3 +1,16 @@
+"""
+This script demonstrates how to train a multi-lingual multi-task model with four
+tasks:
+- Target task
+- Auxiliary task 1 (different language)
+- Auxiliary task 2 (different task)
+- Auxiliary task 3 (different language and task)
+For example, if the target task is Spanish Name Tagging, related task Part-of-
+speech Tagging, and related language English, task 1 is English Name Tagging,
+task 2 is Spanish Part-of-speech Tagging, and task 3 is English Part-of-speech
+Tagging.
+"""
+
 import math
 import os
 from tqdm import tqdm
@@ -18,8 +31,7 @@ from torch.utils.data import DataLoader
 
 from util import evaluate
 from data import ConllParser, SeqLabelDataset, SeqLabelProcessor, count2vocab
-from model import Linears, LSTM, CRF, CharCNN, Highway, LstmCrf, load_embedding, \
-    Linear
+from model import Linear, LSTM, CRF, CharCNN, Highway, LstmCrf, load_embedding
 
 timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
 

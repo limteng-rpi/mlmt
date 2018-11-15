@@ -1,16 +1,3 @@
-"""
-This script demonstrates how to train a multi-lingual multi-task model with four
-tasks:
-- Target task
-- Auxiliary task 1 (different language)
-- Auxiliary task 2 (different task)
-- Auxiliary task 3 (different language and task)
-For example, if the target task is Spanish Name Tagging, related task Part-of-
-speech Tagging, and related language English, task 1 is English Name Tagging,
-task 2 is Spanish Part-of-speech Tagging, and task 3 is English Part-of-speech
-Tagging.
-"""
-
 import math
 import os
 from tqdm import tqdm
@@ -48,14 +35,6 @@ argparser.add_argument('--test_tgt', help='Path to the test set file')
 argparser.add_argument('--train_cl', help='Path to the training set file')
 argparser.add_argument('--dev_cl', help='Path to the dev set file')
 argparser.add_argument('--test_cl', help='Path to the test set file')
-# Cross-task: same languages, diff tasks
-argparser.add_argument('--train_ct', help='Path to the training set file')
-argparser.add_argument('--dev_ct', help='Path to the dev set file')
-argparser.add_argument('--test_ct', help='Path to the test set file')
-# Cross-lingual Cross-task, diff languages and tasks
-argparser.add_argument('--train_clct', help='Path to the training set file')
-argparser.add_argument('--dev_clct', help='Path to the dev set file')
-argparser.add_argument('--test_clct', help='Path to the test set file')
 
 argparser.add_argument('--log', help='Path to the log dir')
 argparser.add_argument('--model', help='Path to the model file')
@@ -120,8 +99,7 @@ logger.info('----------')
 
 # Data file
 logger.info('Loading data sets')
-ner_parser = ConllParser(skip_comment=True)
-pos_parser = ConllParser(token_col=1, label_col=3, skip_comment=True)
+ner_parser = ConllParser(skip_comment=True, separator=' ', label_col=2)
 
 train_set_tgt = SeqLabelDataset(args.train_tgt, parser=ner_parser)
 dev_set_tgt = SeqLabelDataset(args.dev_tgt, parser=ner_parser)
@@ -131,27 +109,16 @@ train_set_cl = SeqLabelDataset(args.train_cl, parser=ner_parser)
 dev_set_cl = SeqLabelDataset(args.dev_cl, parser=ner_parser)
 test_set_cl = SeqLabelDataset(args.test_cl, parser=ner_parser)
 
-train_set_ct = SeqLabelDataset(args.train_ct, parser=pos_parser)
-dev_set_ct = SeqLabelDataset(args.dev_ct, parser=pos_parser)
-test_set_ct = SeqLabelDataset(args.test_ct, parser=pos_parser)
-
-train_set_clct = SeqLabelDataset(args.train_clct, parser=pos_parser)
-dev_set_clct = SeqLabelDataset(args.dev_clct, parser=pos_parser)
-test_set_clct = SeqLabelDataset(args.test_clct, parser=pos_parser)
-
-# datasets = {'train': train_set, 'dev': dev_set, 'test': test_set}
 datasets = {
     'tgt': {'train': train_set_tgt, 'dev': dev_set_tgt, 'test': test_set_tgt},
     'cl': {'train': train_set_cl, 'dev': dev_set_cl, 'test': test_set_cl},
-    'ct': {'train': train_set_ct, 'dev': dev_set_ct, 'test': test_set_ct},
-    'clct': {'train': train_set_clct, 'dev': dev_set_clct, 'test': test_set_clct}
 }
 
 # Vocabs
 logger.info('Building vocabs')
 (
-    token_count_1, token_count_2, char_count, label_count_1, label_count_2
-) = Counter(), Counter(), Counter(), Counter(), Counter()
+    token_count_1, token_count_2, char_count, label_count_1
+) = Counter(), Counter(), Counter(), Counter()
 for _, ds in datasets['tgt'].items():
     tc, cc, lc = ds.stats()
     token_count_1.update(tc)
@@ -162,38 +129,29 @@ for _, ds in datasets['cl'].items():
     token_count_2.update(tc)
     char_count.update(cc)
     label_count_1.update(lc)
-for _, ds in datasets['ct'].items():
-    tc, cc, lc = ds.stats()
-    token_count_1.update(tc)
-    char_count.update(cc)
-    label_count_2.update(lc)
-for _, ds in datasets['clct'].items():
-    tc, cc, lc = ds.stats()
-    token_count_2.update(tc)
-    char_count.update(cc)
-    label_count_2.update(lc)
+
 token_vocab_1 = count2vocab(token_count_1, offset=len(C.TOKEN_PADS), pads=C.TOKEN_PADS)
 token_vocab_2 = count2vocab(token_count_2, offset=len(C.TOKEN_PADS), pads=C.TOKEN_PADS)
 char_vocab = count2vocab(char_count, offset=len(C.CHAR_PADS), pads=C.CHAR_PADS)
-label_vocab_1 = count2vocab(label_count_1, pads=[(C.PAD, C.PAD_INDEX)])
-label_vocab_2 = count2vocab(label_count_2, pads=[(C.PAD, C.PAD_INDEX)])
+label_vocab_1 = count2vocab(label_count_1, offset=1, pads=[(C.PAD, C.PAD_INDEX)])
 
 idx_token_1 = {idx: token for token, idx in token_vocab_1.items()}
 idx_token_2 = {idx: token for token, idx in token_vocab_2.items()}
 idx_label_1 = {idx: label for label, idx in label_vocab_1.items()}
-idx_label_2 = {idx: label for label, idx in label_vocab_2.items()}
+
 idx_tokens = {
     'tgt': idx_token_1,
     'cl': idx_token_2,
-    'ct': idx_token_1,
-    'clct': idx_token_2
 }
 idx_labels = {
     'tgt': idx_label_1,
     'cl': idx_label_1,
-    'ct': idx_label_2,
-    'clct': idx_label_2
 }
+
+print('#token (lang 1): {}'.format(len(token_vocab_1)))
+print('#token (lang 2): {}'.format(len(token_vocab_2)))
+print('#label: {}'.format(len(label_vocab_1)))
+print('#char: {}'.format(len(char_vocab)))
 
 train_set_tgt.numberize(token_vocab_1, label_vocab_1, char_vocab)
 dev_set_tgt.numberize(token_vocab_1, label_vocab_1, char_vocab)
@@ -202,14 +160,6 @@ test_set_tgt.numberize(token_vocab_1, label_vocab_1, char_vocab)
 train_set_cl.numberize(token_vocab_2, label_vocab_1, char_vocab)
 dev_set_cl.numberize(token_vocab_2, label_vocab_1, char_vocab)
 test_set_cl.numberize(token_vocab_2, label_vocab_1, char_vocab)
-
-train_set_ct.numberize(token_vocab_1, label_vocab_2, char_vocab)
-dev_set_ct.numberize(token_vocab_1, label_vocab_2, char_vocab)
-test_set_ct.numberize(token_vocab_1, label_vocab_2, char_vocab)
-
-train_set_clct.numberize(token_vocab_2, label_vocab_2, char_vocab)
-dev_set_clct.numberize(token_vocab_2, label_vocab_2, char_vocab)
-test_set_clct.numberize(token_vocab_2, label_vocab_2, char_vocab)
 
 # Embedding file
 word_embed_1 = load_embedding(args.word_embed_1,
@@ -234,7 +184,7 @@ lstm = LSTM(feat_dim,
             forget_bias=args.lstm_forget_bias
             )
 crf_1 = CRF(label_size=len(label_vocab_1) + 2)
-crf_2 = CRF(label_size=len(label_vocab_2) + 2)
+
 # Linear layers for task 1
 shared_linear_1 = Linear(in_features=lstm.output_size,
                          out_features=len(label_vocab_1))
@@ -242,13 +192,6 @@ spec_linear_1_1 = Linear(in_features=lstm.output_size,
                          out_features=len(label_vocab_1))
 spec_linear_1_2 = Linear(in_features=lstm.output_size,
                          out_features=len(label_vocab_1))
-# Linear layers for task 2
-shared_linear_2 = Linear(in_features=lstm.output_size,
-                         out_features=len(label_vocab_2))
-spec_linear_2_1 = Linear(in_features=lstm.output_size,
-                         out_features=len(label_vocab_2))
-spec_linear_2_2 = Linear(in_features=lstm.output_size,
-                         out_features=len(label_vocab_2))
 
 lstm_crf_tgt = LstmCrf(
     token_vocab_1, label_vocab_1, char_vocab,
@@ -274,40 +217,13 @@ lstm_crf_cl = LstmCrf(
     lstm_dropout_prob=args.lstm_dropout,
     char_highway=char_hw if args.use_highway else None
 )
-lstm_crf_ct = LstmCrf(
-    token_vocab_1, label_vocab_2, char_vocab,
-    word_embedding=word_embed_1,
-    char_embedding=char_embed,
-    crf=crf_2,
-    lstm=lstm,
-    univ_fc_layer=shared_linear_2,
-    spec_fc_layer=spec_linear_2_1,
-    embed_dropout_prob=args.feat_dropout,
-    lstm_dropout_prob=args.lstm_dropout,
-    char_highway=char_hw if args.use_highway else None
-)
-lstm_crf_clct = LstmCrf(
-    token_vocab_2, label_vocab_2, char_vocab,
-    word_embedding=word_embed_2,
-    char_embedding=char_embed,
-    crf=crf_2,
-    lstm=lstm,
-    univ_fc_layer=shared_linear_2,
-    spec_fc_layer=spec_linear_2_2,
-    embed_dropout_prob=args.feat_dropout,
-    lstm_dropout_prob=args.lstm_dropout,
-    char_highway=char_hw if args.use_highway else None
-)
+
 if use_gpu:
     lstm_crf_tgt.cuda()
     lstm_crf_cl.cuda()
-    lstm_crf_ct.cuda()
-    lstm_crf_clct.cuda()
 models = {
     'tgt': lstm_crf_tgt,
-    'cl': lstm_crf_cl,
-    'ct': lstm_crf_ct,
-    'clct': lstm_crf_clct
+    'cl': lstm_crf_cl
 }
 
 # Task
@@ -317,17 +233,9 @@ optimizer_tgt = optim.SGD(
 optimizer_cl = optim.SGD(
     filter(lambda p: p.requires_grad, lstm_crf_cl.parameters()),
     lr=args.lr, momentum=args.momentum)
-optimizer_ct = optim.SGD(
-    filter(lambda p: p.requires_grad, lstm_crf_ct.parameters()),
-    lr=args.lr, momentum=args.momentum)
-optimizer_clct = optim.SGD(
-    filter(lambda p: p.requires_grad, lstm_crf_clct.parameters()),
-    lr=args.lr, momentum=args.momentum)
 optimizers = {
     'tgt': optimizer_tgt,
     'cl': optimizer_cl,
-    'ct': optimizer_ct,
-    'clct': optimizer_clct
 }
 processor = SeqLabelProcessor(gpu=use_gpu)
 
@@ -356,12 +264,8 @@ state = {
 batch_num = len(train_set_tgt) // batch_size
 r_tgt = math.sqrt(len(train_set_tgt))
 r_cl = 1.0 * .1 * math.sqrt(len(datasets['cl']['train']))
-r_ct = .1 * 1.0 * math.sqrt(len(datasets['ct']['train']))
-r_clct = .1 * .1 * math.sqrt(len(datasets['clct']['train']))
 num_cl = int(r_cl / r_tgt * batch_num)
-num_ct = int(r_ct / r_tgt * batch_num)
-num_clct = int(r_clct / r_tgt * batch_num)
-print('{}, {}, {}, {}'.format(batch_num, num_cl, num_ct, num_clct))
+print('{}, {}'.format(batch_num, num_cl))
 
 data_loaders = {}
 data_loader_iters = {}
@@ -370,6 +274,7 @@ for task, task_datasets in datasets.items():
         k: DataLoader(v,
                       batch_size=batch_size,
                       shuffle=k == 'train',
+                      drop_last=k == 'train',
                       collate_fn=processor.process)
         for k, v in task_datasets.items()
     }
@@ -386,8 +291,7 @@ try:
 
         for ds in ['train', 'dev', 'test']:
             if ds == 'train':
-                tasks = ['tgt'] * batch_num + ['cl'] * num_cl\
-                          + ['ct'] * num_ct + ['clct'] * num_clct
+                tasks = ['tgt'] * batch_num + ['cl'] * num_cl
                 shuffle(tasks)
                 progress = tqdm(total=len(tasks), mininterval=1,
                                 desc=ds)
@@ -414,7 +318,7 @@ try:
                     optimizer.step()
                 progress.close()
             else:
-                for task in ['tgt', 'cl', 'ct', 'clct']:
+                for task in ['tgt', 'cl']:
                     logger.info('task: {} dataset: {}'.format(task, ds))
                     results = []
                     for batch in data_loaders[task][ds]:

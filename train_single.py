@@ -86,7 +86,7 @@ logger.info('----------')
 
 # Data file
 logger.info('Loading data sets')
-parser = ConllParser(separator='\t', token_col=0, label_col=1, skip_comment=True)
+parser = ConllParser(separator=' ', token_col=0, label_col=2, skip_comment=True)
 train_set = SeqLabelDataset(args.train, parser=parser)
 dev_set = SeqLabelDataset(args.dev, parser=parser)
 test_set = SeqLabelDataset(args.test, parser=parser)
