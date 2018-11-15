@@ -235,6 +235,7 @@ class SeqLabelProcessor(BatchProcessor):
 
         return (batch_tokens, batch_labels, batch_chars,
                 seq_lens, char_lens)
+<<<<<<< HEAD
 
 # from torch.autograd import Variable
 # from util import get_logger
@@ -577,3 +578,5 @@ class SeqLabelProcessor(BatchProcessor):
 #
 #     def batch_num(self, batch_size):
 #         return -(-len(self.dataset_numberized) // batch_size)
+=======
+>>>>>>> master

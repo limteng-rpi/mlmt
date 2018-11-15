@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.init as I
 import torch.nn.utils.rnn as R
 import torch.nn.functional as F
+<<<<<<< HEAD
 import traceback
 
 import re
@@ -12,6 +13,13 @@ import logging
 import numpy as np
 import constant as C
 
+=======
+
+import re
+import logging
+import constant as C
+
+>>>>>>> master
 logger = logging.getLogger()
 
 
@@ -40,6 +48,7 @@ def sequence_mask(lens, max_len=None):
     return mask
 
 
+<<<<<<< HEAD
 def log_sum_exp_(x, dim=None):
     """
     Sum probabilities in the log-space.
@@ -59,8 +68,111 @@ def sequence_mask_(batch_len, max_len=None):
         mask[i, range(batch_len[i])] = 1
 
     return mask
+=======
+def load_embedding(path: str,
+                   dimension: int,
+                   vocab: dict = None,
+                   skip_first_line: bool = True,
+                   ):
+    logger.info('Scanning embedding file: {}'.format(path))
+
+    embed_vocab = set()
+    lower_mapping = {}  # lower case - original
+    digit_mapping = {}  # lower case + replace digit with 0 - original
+    digit_pattern = re.compile('\d')
+    with open(path, 'r', encoding='utf-8') as r:
+        if skip_first_line:
+            r.readline()
+        for line in r:
+            try:
+                token = line.split(' ')[0].strip()
+                if token:
+                    embed_vocab.add(token)
+                    token_lower = token.lower()
+                    token_digit = re.sub(digit_pattern, '0', token_lower)
+                    if token_lower not in lower_mapping:
+                        lower_mapping[token_lower] = token
+                    if token_digit not in digit_mapping:
+                        digit_mapping[token_digit] = token
+            except UnicodeDecodeError:
+                continue
+
+    token_mapping = defaultdict(list)  # embed token - vocab token
+    for token in vocab:
+        token_lower = token.lower()
+        token_digit = re.sub(digit_pattern, '0', token_lower)
+        if token in embed_vocab:
+            token_mapping[token].append(token)
+        elif token_lower in lower_mapping:
+            token_mapping[lower_mapping[token_lower]].append(token)
+        elif token_digit in digit_mapping:
+            token_mapping[digit_mapping[token_digit]].append(token)
+
+    logger.info('Loading embeddings')
+    weight = [[.0] * dimension for _ in range(len(vocab))]
+    with open(path, 'r', encoding='utf-8') as r:
+        if skip_first_line:
+            r.readline()
+        for line in r:
+            try:
+                segs = line.rstrip().split(' ')
+                token = segs[0]
+                if token in token_mapping:
+                    vec = [float(v) for v in segs[1:]]
+                    for t in token_mapping.get(token):
+                        weight[vocab[t]] = vec.copy()
+            except UnicodeDecodeError:
+                continue
+            except ValueError:
+                continue
+    embed = nn.Embedding(
+        len(vocab),
+        dimension,
+        padding_idx=C.PAD_INDEX,
+        sparse=True,
+        _weight=torch.FloatTensor(weight)
+    )
+    return embed
 
 
+class Linear(nn.Linear):
+    def __init__(self,
+                 in_features: int,
+                 out_features: int,
+                 bias: bool = True):
+        super(Linear, self).__init__(in_features, out_features, bias=bias)
+        I.orthogonal_(self.weight)
+
+>>>>>>> master
+
+class Linears(nn.Module):
+    def __init__(self,
+                 in_features: int,
+                 out_features: int,
+                 hiddens: list,
+                 bias: bool = True,
+                 activation: str = 'tanh'):
+        super(Linears, self).__init__()
+        assert len(hiddens) > 0
+
+        self.in_features = in_features
+        self.out_features = self.output_size = out_features
+
+        in_dims = [in_features] + hiddens[:-1]
+        self.linears = nn.ModuleList([Linear(in_dim, out_dim, bias=bias)
+                                      for in_dim, out_dim
+                                      in zip(in_dims, hiddens)])
+        self.output_linear = Linear(hiddens[-1], out_features, bias=bias)
+        self.activation = getattr(F, activation)
+
+    def forward(self, inputs):
+        linear_outputs = inputs
+        for linear in self.linears:
+            linear_outputs = linear.forward(linear_outputs)
+            linear_outputs = self.activation(linear_outputs)
+        return self.output_linear.forward(linear_outputs)
+
+<<<<<<< HEAD
 def get_mask(batch_len, max_len=None):
     if not max_len:
         max_len = torch.max(batch_len)
@@ -177,6 +289,9 @@ class Linears(nn.Module):
         return self.output_linear.forward(linear_outputs)
 
 
+=======
+
+>>>>>>> master
 class Highway(nn.Module):
     def __init__(self,
                  size: int,
@@ -252,6 +367,7 @@ class CharCNN(nn.Module):
         return outputs
 
 
+<<<<<<< HEAD
 
 
 
@@ -343,6 +459,8 @@ class CRFLoss(nn.Module):
         pass
 
 
+=======
+>>>>>>> master
 class CRF(nn.Module):
     def __init__(self, label_size):
         super(CRF, self).__init__()

@@ -10,7 +10,11 @@ import constant as C
 import torch
 
 from argparse import ArgumentParser
+<<<<<<< HEAD
 from model import Linears, LSTM, CRF, CharCNN, Highway, LstmCrf
+=======
+from model import Linear, LSTM, CRF, CharCNN, Highway, LstmCrf
+>>>>>>> master
 from util import evaluate
 from data import ConllParser, SeqLabelDataset, SeqLabelProcessor
 
@@ -72,9 +76,14 @@ lstm = LSTM(feat_dim,
             bidirectional=True,
             forget_bias=train_args['lstm_forget_bias'])
 crf = CRF(label_size=len(label_vocab) + 2)
+<<<<<<< HEAD
 linear = Linears(in_features=lstm.output_size,
                  out_features=len(label_vocab),
                  hiddens=[lstm.output_size // 2])
+=======
+linear = Linear(in_features=lstm.output_size,
+                out_features=len(label_vocab))
+>>>>>>> master
 lstm_crf = LstmCrf(
     token_vocab, label_vocab, char_vocab,
     word_embedding=word_embed,

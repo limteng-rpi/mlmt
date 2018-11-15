@@ -1,0 +1,269 @@
+{
+  "training": {
+    "eval_freq": 1000,
+    "max_step": 50000,
+    "gpu": true
+  },
+  "datasets": [
+    {
+      "name": "nld_ner",
+      "language": "nld",
+      "type": "sequence",
+      "task": "ner",
+      "parser": {
+        "format": "conll",
+        "token_col": 0,
+        "label_col": 1
+      },
+      "sample": 200,
+      "batch_size": 19,
+      "files": {
+        "train": "/PATH/TO/ned.train.bioes",
+        "dev": "/PATH/TO/ned.testa.bioes",
+        "test": "/PATH/TO/ned.testb.bioes"
+      }
+    },
+    {
+      "name": "nld_pos",
+      "language": "nld",
+      "type": "sequence",
+      "task": "pos",
+      "parser": {
+        "format": "conll",
+        "token_col": 1,
+        "label_col": 3
+      },
+      "batch_size": 19,
+      "files": {
+        "train": "/PATH/TO/nl-ud-train.conllu",
+        "dev": "/PATH/TO/nl-ud-dev.conllu",
+        "test": "/PATH/TO/nl-ud-test.conllu"
+      }
+    },
+    {
+      "name": "eng_ner",
+      "language": "eng",
+      "type": "sequence",
+      "task": "ner",
+      "parser": {
+        "format": "conll",
+        "token_col": 0,
+        "label_col": 1
+      },
+      "batch_size": 19,
+      "files": {
+        "train": "/PATH/TO/eng.train.bioes",
+        "dev": "/PATH/TO/eng.testa.bioes",
+        "test": "/PATH/TO/eng.testb.bioes"
+      }
+    },
+    {
+      "name": "eng_pos",
+      "language": "eng",
+      "type": "sequence",
+      "task": "pos",
+      "parser": {
+        "format": "conll",
+        "token_col": 1,
+        "label_col": 3
+      },
+      "batch_size": 19,
+      "files": {
+        "train": "/PATH/TO/en-ud-train.conllu",
+        "dev": "/PATH/TO/en-ud-dev.conllu",
+        "test": "/PATH/TO/en-ud-test.conllu"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "name": "Dutch NER",
+      "language": "nld",
+      "task": "ner",
+      "model": {
+        "model": "lstm_crf",
+        "word_embed": "nld_word_embed",
+        "char_embed": "char_embed",
+        "crf": "ner_crf",
+        "lstm": "lstm",
+        "univ_layer": "ner_univ_linear",
+        "spec_layer": "ner_nld_linear",
+        "embed_dropout": 0.0,
+        "lstm_dropout": 0.6,
+        "linear_dropout": 0.0,
+        "use_char_embedding": true,
+        "char_highway": "char_highway"
+      },
+      "dataset": "nld_ner",
+      "learning_rate": 0.02,
+      "decay_rate": 0.9,
+      "decay_step": 10000,
+      "prob": 1,
+      "gpu": true,
+      "ref": true
+    },
+    {
+      "name": "Dutch POS",
+      "language": "nld",
+      "task": "pos",
+      "model": {
+        "model": "lstm_crf",
+        "word_embed": "nld_word_embed",
+        "char_embed": "char_embed",
+        "crf": "pos_crf",
+        "lstm": "lstm",
+        "univ_layer": "pos_univ_linear",
+        "spec_layer": "pos_nld_linear",
+        "embed_dropout": 0.0,
+        "lstm_dropout": 0.6,
+        "linear_dropout": 0.0,
+        "use_char_embedding": true,
+        "char_highway": "char_highway"
+      },
+      "dataset": "nld_pos",
+      "learning_rate": 0.02,
+      "decay_rate": 0.9,
+      "decay_step": 10000,
+      "prob": 0.1,
+      "gpu": true
+    },
+    {
+      "name": "English NER",
+      "language": "eng",
+      "task": "ner",
+      "model": {
+        "model": "lstm_crf",
+        "word_embed": "eng_word_embed",
+        "char_embed": "char_embed",
+        "crf": "ner_crf",
+        "lstm": "lstm",
+        "univ_layer": "ner_univ_linear",
+        "spec_layer": "ner_eng_linear",
+        "embed_dropout": 0.0,
+        "lstm_dropout": 0.6,
+        "linear_dropout": 0.0,
+        "use_char_embedding": true,
+        "char_highway": "char_highway"
+      },
+      "dataset": "eng_ner",
+      "learning_rate": 0.02,
+      "decay_rate": 0.9,
+      "decay_step": 10000,
+      "prob": 1,
+      "gpu": true
+    },
+    {
+      "name": "English POS",
+      "language": "eng",
+      "task": "pos",
+      "model": {
+        "model": "lstm_crf",
+        "word_embed": "eng_word_embed",
+        "char_embed": "char_embed",
+        "crf": "pos_crf",
+        "lstm": "lstm",
+        "univ_layer": "pos_univ_linear",
+        "spec_layer": "pos_eng_linear",
+        "embed_dropout": 0.0,
+        "lstm_dropout": 0.6,
+        "linear_dropout": 0.0,
+        "use_char_embedding": true,
+        "char_highway": "char_highway"
+      },
+      "dataset": "eng_pos",
+      "learning_rate": 0.02,
+      "decay_rate": 0.9,
+      "decay_step": 10000,
+      "prob": 0.1,
+      "gpu": true
+    }
+  ],
+  "components": [
+    {
+      "name": "eng_word_embed",
+      "model": "embedding",
+      "language": "eng",
+      "file": "/PATH/TO/enwiki.cbow.50d.txt",
+      "stats": true,
+      "padding": 2,
+      "trainable": true,
+      "allow_gpu": false,
+      "dimension": 50,
+      "padding_idx": 0,
+      "sparse": true
+    },
+    {
+      "name": "nld_word_embed",
+      "model": "embedding",
+      "language": "nld",
+      "file": "/PATH/TO/nlwiki.cbow.50d.txt",
+      "stats": true,
+      "padding": 2,
+      "trainable": true,
+      "allow_gpu": false,
+      "dimension": 50,
+      "padding_idx": 0,
+      "sparse": true
+    },
+    {
+      "name": "char_embed",
+      "model": "char_cnn",
+      "dimension": 50,
+      "filters": [[2, 20], [3, 20], [4, 20]]
+    },
+    {
+      "name": "lstm",
+      "model": "lstm",
+      "hidden_size": 171,
+      "bidirectional": true,
+      "forget_bias": 1.0,
+      "batch_first": true,
+      "dropout": 0.0
+    },
+    {
+      "name": "ner_crf",
+      "model": "crf"
+    },
+    {
+      "name": "pos_crf",
+      "model": "crf"
+    },
+    {
+      "name": "ner_univ_linear",
+      "model": "linear",
+      "position": "output"
+    },
+    {
+      "name": "ner_eng_linear",
+      "model": "linear",
+      "position": "output"
+    },
+    {
+      "name": "ner_nld_linear",
+      "model": "linear",
+      "position": "output"
+    },
+    {
+      "name": "pos_univ_linear",
+      "model": "linear",
+      "position": "output"
+    },
+    {
+      "name": "pos_eng_linear",
+      "model": "linear",
+      "position": "output"
+    },
+    {
+      "name": "pos_nld_linear",
+      "model": "linear",
+      "position": "output"
+    },
+    {
+      "name": "char_highway",
+      "model": "highway",
+      "position": "char",
+      "num_layers": 2,
+      "activation": "selu"
+    }
+  ]
+}
