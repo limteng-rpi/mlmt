@@ -217,8 +217,11 @@ class SeqLabelProcessor(BatchProcessor):
         for tokens, labels, chars in batch:
             batch_tokens.append(tokens + [padding_idx] * (max_seq_len - len(tokens)))
             batch_labels.append(labels + [padding_idx] * (max_seq_len - len(tokens)))
-            batch_chars.extend([x + [0] * (max_char_len - len(x)) for x in chars]
-                               + [[0] * max_char_len] * (max_seq_len - len(tokens)))
+            batch_chars.extend(
+                [x + [0] * (max_char_len - len(x)) for x in chars]
+                # + [[0] * max_char_len] * (max_seq_len - len(tokens))
+                + [[0] * max_char_len for _ in range(max_seq_len - len(tokens))]
+            )
 
         batch_tokens = torch.LongTensor(batch_tokens)
         batch_labels = torch.LongTensor(batch_labels)
