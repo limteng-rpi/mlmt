@@ -136,9 +136,9 @@ class Linears(nn.Module):
     def forward(self, inputs):
         linear_outputs = inputs
         for linear in self.linears:
-            linear_outputs = linear.forward(linear_outputs)
+            linear_outputs = linear(linear_outputs)
             linear_outputs = self.activation(linear_outputs)
-        return self.output_linear.forward(linear_outputs)
+        return self.output_linear(linear_outputs)
 
 
 class Highway(nn.Module):
@@ -206,9 +206,9 @@ class CharCNN(nn.Module):
                                     for x in filters])
 
     def forward(self, inputs):
-        inputs_embed = self.embedding.forward(inputs)
+        inputs_embed = self.embedding(inputs)
         inputs_embed = inputs_embed.unsqueeze(1)
-        conv_outputs = [F.relu(conv.forward(inputs_embed)).squeeze(3)
+        conv_outputs = [F.relu(conv(inputs_embed)).squeeze(3)
                         for conv in self.convs]
         max_pool_outputs = [F.max_pool1d(i, i.size(2)).squeeze(2)
                             for i in conv_outputs]
@@ -432,17 +432,17 @@ class LstmCrf(Model):
         batch_size, seq_len = inputs.size()
 
         # Word embedding
-        inputs_embed = self.word_embedding.forward(inputs)
+        inputs_embed = self.word_embedding(inputs)
 
         # Character embedding
         if self.use_char_embedding:
-            chars_embed = self.char_embedding.forward(chars)
+            chars_embed = self.char_embedding(chars)
             if self.char_highway:
-                chars_embed = self.char_highway.forward(chars_embed)
+                chars_embed = self.char_highway(chars_embed)
             chars_embed = chars_embed.view(batch_size, seq_len, -1)
             inputs_embed = torch.cat([inputs_embed, chars_embed], dim=2)
 
-        inputs_embed = self.embed_dropout.forward(inputs_embed)
+        inputs_embed = self.embed_dropout(inputs_embed)
 
         # LSTM layer
         inputs_packed = R.pack_padded_sequence(inputs_embed, lens.tolist(),
@@ -451,13 +451,13 @@ class LstmCrf(Model):
         lstm_out, _ = R.pad_packed_sequence(lstm_out, batch_first=True)
 
         lstm_out = lstm_out.contiguous().view(-1, self.lstm.output_size)
-        lstm_out = self.lstm_dropout.forward(lstm_out)
+        lstm_out = self.lstm_dropout(lstm_out)
 
         # Fully-connected layer
-        univ_feats = self.univ_fc_layer.forward(lstm_out)
+        univ_feats = self.univ_fc_layer(lstm_out)
         if self.spec_fc_layer is not None:
-            spec_feats = self.spec_fc_layer.forward(lstm_out)
-            gate = F.sigmoid(self.spec_gate.forward(lstm_out))
+            spec_feats = self.spec_fc_layer(lstm_out)
+            gate = F.sigmoid(self.spec_gate(lstm_out))
             outputs = gate * spec_feats + (1 - gate) * univ_feats
         else:
             outputs = univ_feats
