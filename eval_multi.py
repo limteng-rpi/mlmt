@@ -122,7 +122,7 @@ try:
         pred, loss = lstm_crf.predict(
             tokens, labels, seq_lens, chars, char_lens)
         results.append((pred, labels, seq_lens, tokens))
-        dataset_loss.append(loss.data[0])
+        dataset_loss.append(loss.data.item())
 
     dataset_loss = sum(dataset_loss) / len(dataset_loss)
     fscore, prec, rec = evaluate(results, idx_token, idx_label,
