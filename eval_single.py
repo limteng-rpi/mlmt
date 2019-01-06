@@ -81,7 +81,7 @@ lstm_crf = LstmCrf(
     crf=crf,
     lstm=lstm,
     univ_fc_layer=linear,
-    embed_dropout_prob=train_args['embed_dropout'],
+    embed_dropout_prob=train_args['feat_dropout'],
     lstm_dropout_prob=train_args['lstm_dropout'],
     char_highway=char_hw if train_args['use_highway'] else None
 )
