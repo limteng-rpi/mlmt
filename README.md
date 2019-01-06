@@ -6,12 +6,12 @@ Old files were moved to `old/` and will be removed once the re-organization is d
 
 ## TODOs
 
-* Implement `eval_multi.py`.
+* (done) Implement `eval_multi.py`.
 * Revise `build_tasks_from_file()` to support case-sensitive word embeddings.
 
 ## Requirements
 * Python 3.5+
-* Pytorch 0.4.1 (old scripts use Pytorch 0.3.1)
+* Pytorch 0.4.1 or Pytorch 1.0 (old scripts use Pytorch 0.3.1)
 * tqdm (used to display training progress)
 
 ## Architecture
@@ -57,6 +57,12 @@ python train_multi.py --train_tgt <PATH> --dev_tgt <PATH>
   --model <MODEL_DIRECTORY> --max_epoch 50
   --word_embed_1 <PATH> --word_embed_2 <PATH> --word_embed_dim 50
 ```
+
+Evalute the trained model:
+
+```
+python eval_multi.py --model <PATH/TO/THE/MODEL/FILE> --file <PATH/TO/THE/DATA/FILE>
+  --log <LOG/DIRECTORY>
 
 ## Configuration
 
