@@ -1,8 +1,6 @@
-I'm re-organizing the code and made the following changes:
-1. Improve pre-trained word embedding loading.
-2. Use PyTorch's built-in Dataset and DataLoader APIs
+If what you want is a (monolingual, single-task) name tagging model, we have a new implementation at https://github.com/limteng-rpi/neural_name_tagging .
 
-Old files were moved to `old/` and will be removed once the re-organization is done.
+Old files were moved to `old/`.
 
 ## TODOs
 
