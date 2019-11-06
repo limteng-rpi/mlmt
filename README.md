@@ -2,11 +2,6 @@ If what you want is a (monolingual, single-task) name tagging model, we have a n
 
 Old files were moved to `old/`.
 
-## TODOs
-
-* (done) Implement `eval_multi.py`.
-* Revise `build_tasks_from_file()` to support case-sensitive word embeddings.
-
 ## Requirements
 * Python 3.5+
 * Pytorch 0.4.1 or Pytorch 1.0 (old scripts use Pytorch 0.3.1)
